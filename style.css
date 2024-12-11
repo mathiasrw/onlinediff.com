@@ -1,0 +1,136 @@
+* {
+	margin: 0;
+	padding: 0;
+}
+html, body {
+	background: #efefef;
+	font-size: 14px;
+	font-family:   Menlo, Monaco, 'Cascadia Code', Consolas, monospace;
+	line-height: 1.4em;
+}
+body {
+	padding: 15px 5px 15px 5px;
+	
+	-webkit-box-sizing: border-box;
+	-moz-box-sizing: border-box;
+	box-sizing: border-box;
+}
+html, body, table, tbody, tr, td, td div {
+	height: 100%
+}
+table {
+	table-layout: fixed;
+	width: 100%;
+}
+td {
+	box-sizing:border-box;
+	width: 33.3333%;
+	padding: 4px 4px;
+	border: 0px solid transparent;
+}
+td div {
+	overflow: auto;
+	font: 1em;
+	text-align: left;
+	white-space: pre-wrap;
+}
+h1 {
+	display: inline;
+	font-size: 100%;
+}
+del {
+  text-decoration: line-through;
+	color: #DE350B; 
+	background: #FFEBE6; 
+}
+ins {
+	background: #E3FCEF; 
+	color: #006644; 
+	text-decoration: none;
+}
+
+.chunk-header {
+	color: #8a008b;
+	text-decoration: none;
+}
+
+#result {
+	white-space: pre-wrap;
+	padding-bottom: 2em;
+}
+
+#settings {
+	position: absolute;
+	bottom: 5px;
+	left: 50%;               
+  transform: translateX(-50%);
+	height: 2em;
+	line-height: 2em;
+	    background: #efefef;
+    box-shadow: 0 0 18px 22px #efefef;
+	border-radius: 5px; /* Optional for smoother edges */
+
+        user-select: none; /* Prevent text selection */
+    -webkit-user-select: none; /* For WebKit browsers like Chrome and Safari */
+    -moz-user-select: none; /* For Firefox */
+    -ms-user-select: none; /* For older versions of Internet Explorer */
+}
+#settings label {
+	margin-left: 1em;
+	cursor: pointer;
+
+}
+
+#settings label input{
+	position: relative;
+    top: 1px;
+    left: 4px;
+}
+
+.source {
+	position: absolute;
+	left: 10px; 
+	bottom: 10px;
+
+	
+	color:darkgray;
+	text-decoration: none;
+	   left: 20px;
+    bottom: 13px;
+    font-size: 10px;
+        user-select: none; /* Prevent text selection */
+    -webkit-user-select: none; /* For WebKit browsers like Chrome and Safari */
+    -moz-user-select: none; /* For Firefox */
+    -ms-user-select: none; /* For older versions of Internet Explorer */
+}
+
+.source hover {
+	color:cornflowerblue;
+	text-decoration: underline;
+}
+
+
+
+[contentEditable] {
+	background: #F9F9F9;
+	border-color: #BBB #D9D9D9 #DDD;
+	border-radius: 4px;
+	-webkit-user-modify: read-write-plaintext-only;
+	outline: none;
+}
+[contentEditable]:focus {
+	background: #FFF;
+	border-color: #6699cc;
+	box-shadow: 0 0 4px #2175c9;
+}
+
+@-moz-document url-prefix() {
+	body {
+		height: 99%; /* Hide scroll bar in Firefox */
+	}
+}
+
+
+#a,#b{
+padding:10px;
+}

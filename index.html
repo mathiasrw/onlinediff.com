@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en-AU">
+<head>
+	<meta charset="utf-8">
+	<title>Online Diff - Compare Text Differences Instantly</title>
+	<meta name="description" content="Compare text online to highlight differences. No clutter and no BS. Highlight changes by char, word, line, or see patch."/>
+	<meta name="keywords" content="online diff, text comparison, compare text, diff tool"/>
+	<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+	<meta property="og:title" content="Online Diff - Compare Text Differences Instantly"/>
+	<meta property="og:description" content="Compare text online and highlight differences without clutter."/>
+	<meta property="og:type" content="website"/>
+	<meta property="og:url" content="https://onlinediff.com/"/>
+	<link rel="canonical" href="https://onlinediff.com/"/>
+	<link rel="stylesheet" href="style.css"/>
+	<script type="application/ld+json">
+	{
+	  "@context": "https://schema.org",
+	  "@type": "WebApplication",
+	  "name": "Online Diff",
+	  "url": "https://onlinediff.com/",
+	  "applicationCategory": "Utility",
+	  "description": "Compare text online and highlight changes without clutter.",
+	  "operatingSystem": "All"
+	}
+	</script>
+	<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+	<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+	<link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+	<link rel="manifest" href="/site.webmanifest">
+</head>
+<body>
+
+<div id="settings">
+	<h1>Diff</h1>
+	<label title="Press 1"><input type="radio" name="diff_type" value="diffChars" > Chars</label>
+	<label title="Press 2"><input type="radio" name="diff_type" value="diffWords" checked> Words</label>
+	<label title="Press 3"><input type="radio" name="diff_type" value="diffLines"> Lines</label>
+	<label title="Press 4"><input type="radio" name="diff_type" value="diffPatch"> Patch</label>
+</div>
+
+
+<a href="#" onclick="alert('I got really tired of always having to search for a tool to compare text online and having to finding one with no BS - so got a memorable domain and made the tool I would be looking for myself.\n\nEnjoy...\n\n\n\n@rangelwulff');return false;" class="source">Why?</a>
+
+<table>
+	<tr>
+		<td><div contenteditable="true" id="a">A simple tool to highlight the differences between two texts. 
+
+No ads, no tracking, no BS. 
+
+See the diff per char, word, line, or get the patch.</div></td>
+		<td><div><pre id="result"></pre></div></td>
+		<td><div contenteditable="true" id="b">Highlight the differences between two texts. 
+
+No ads, no tracking, no BS. 
+
+Diff per char, word, line, or get the patch.</div></td>
+	</tr>
+</table>
+
+<script src="diff.js"></script>
+<script defer>
+var a = document.getElementById('a');
+var b = document.getElementById('b');
+var result = document.getElementById('result');
+
+function changed() {
+	var fragment = document.createDocumentFragment();
+	var diff;
+	if (window.diffType === 'diffPatch') {
+		var pastHunkHeader = false;
+		diff = Diff.createTwoFilesPatch('a.txt', 'b.txt', a.textContent, b.textContent)
+			.split('\n')
+			.map(function(entry) {
+				const result = {
+					value: entry + '\n',
+				};
+				if (entry.startsWith('@@')) {
+					result.chunkHeader = true;
+					pastHunkHeader = true;
+				} else if (pastHunkHeader) {
+					if (entry.startsWith('-')) {
+						result.removed = true;
+					} else if (entry.startsWith('+')) {
+						result.added = true;
+					}
+				}
+				return result;
+			});
+	} else {
+		diff = Diff[window.diffType](a.textContent, b.textContent);
+	}
+
+	for (var i=0; i < diff.length; i++) {
+		if (diff[i].removed && diff[i + 1] && diff[i + 1].added) {
+			var swap = diff[i];
+			diff[i] = diff[i + 1];
+			diff[i + 1] = swap;
+		}
+
+		var node;
+		if (diff[i].removed) {
+			node = document.createElement('del');
+			node.appendChild(document.createTextNode(diff[i].value));
+		} else if (diff[i].added) {
+			node = document.createElement('ins');
+			node.appendChild(document.createTextNode(diff[i].value));
+		} else if (diff[i].chunkHeader) {
+			node = document.createElement('span');
+			node.setAttribute('class', 'chunk-header');
+			node.appendChild(document.createTextNode(diff[i].value));
+		} else {
+			node = document.createTextNode(diff[i].value);
+		}
+		fragment.appendChild(node);
+	}
+
+	result.textContent = '';
+	result.appendChild(fragment);
+}
+
+window.onload = function() {
+	onDiffTypeChange(document.querySelector('#settings [name="diff_type"]:checked'));
+	changed();
+};
+
+a.onpaste = a.onchange =
+b.onpaste = b.onchange = changed;
+
+if ('oninput' in a) {
+	a.oninput = b.oninput = changed;
+} else {
+	a.onkeyup = b.onkeyup = changed;
+}
+
+function onDiffTypeChange(radio) {
+	window.diffType = radio.value;
+	document.title = "Diff " + radio.value.slice(4);
+}
+
+var radio = document.getElementsByName('diff_type');
+for (var i = 0; i < radio.length; i++) {
+	radio[i].onchange = function(e) {
+		onDiffTypeChange(e.target);
+		changed();
+	}
+}
+
+document.addEventListener('keydown', function(e) {
+	if (e.key === '1') { radio[0].click(); }
+	if (e.key === '2') { radio[1].click(); }
+	if (e.key === '3') { radio[2].click(); }
+	if (e.key === '4') { radio[3].click(); }
+});
+</script>
+</body>
+</html>
