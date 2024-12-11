@@ -109,7 +109,11 @@ function changed() {
 			node.setAttribute('class', 'chunk-header');
 			node.appendChild(document.createTextNode(diff[i].value));
 		} else {
-			node = document.createTextNode(diff[i].value);
+			node = document.createElement('span');
+			node.setAttribute('class', 'identical');
+			// hide identical
+			//node.appendChild(document.createTextNode(diff[i].value.replace(/^([^\n]*\n)([\s\S]*?)(\n[^\n]*)$/, '$1⋮$3')));
+			node.appendChild(document.createTextNode(diff[i].value);
 		}
 		fragment.appendChild(node);
 	}
