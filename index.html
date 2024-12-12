@@ -38,8 +38,7 @@
 	<label title="Press 4"><input type="radio" name="diff_type" value="diffPatch"> Patch</label>
 </div>
 
-
-<a href="#" onclick="alert('I got really tired of always having to search for a tool to compare text online and having to finding one with no BS - so got a memorable domain and made the tool I would be looking for myself.\n\nEnjoy...\n\n\n\n@rangelwulff');return false;" class="source">Why?</a>
+<a href="#" onclick="alert('I got really tired of always having to search for a tool to compare text online and having to finding one with no BS - so got a memorable domain and made the tool I would be looking for myself.\n\nEnjoy...\n\n@rangelwulff');return false;" class="source">Why?</a>
 
 <table>
 	<tr>
@@ -57,11 +56,31 @@ Diff per char, word, line, or get the patch.</div></td>
 	</tr>
 </table>
 
-<script src="diff.js"></script>
+<script src="diff.js" defer></script>
 <script defer>
 var a = document.getElementById('a');
 var b = document.getElementById('b');
 var result = document.getElementById('result');
+
+function loadFromStorage() {
+	try {
+		var data = JSON.parse(localStorage.getItem('diffData'));
+		if (data && typeof data.a === 'string' && typeof data.b === 'string') {
+			a.textContent = data.a;
+			b.textContent = data.b;
+		}
+	} catch(e) {}
+}
+
+function saveToStorage() {
+	try {
+		var data = {
+			a: a.textContent,
+			b: b.textContent
+		};
+		localStorage.setItem('diffData', JSON.stringify(data));
+	} catch(e) {}
+}
 
 function changed() {
 	var fragment = document.createDocumentFragment();
@@ -113,7 +132,7 @@ function changed() {
 			node.setAttribute('class', 'identical');
 			// hide identical
 			//node.appendChild(document.createTextNode(diff[i].value.replace(/^([^\n]*\n)([\s\S]*?)(\n[^\n]*)$/, '$1⋮$3')));
-			node.appendChild(document.createTextNode(diff[i].value);
+			node.appendChild(document.createTextNode(diff[i].value));
 		}
 		fragment.appendChild(node);
 	}
@@ -123,6 +142,7 @@ function changed() {
 }
 
 window.onload = function() {
+	loadFromStorage();
 	onDiffTypeChange(document.querySelector('#settings [name="diff_type"]:checked'));
 	changed();
 };
@@ -135,6 +155,10 @@ if ('oninput' in a) {
 } else {
 	a.onkeyup = b.onkeyup = changed;
 }
+
+window.onbeforeunload = function() {
+	saveToStorage();
+};
 
 function onDiffTypeChange(radio) {
 	window.diffType = radio.value;
