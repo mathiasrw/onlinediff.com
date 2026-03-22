@@ -36,6 +36,7 @@
 	<label title="Press 2"><input type="radio" name="diff_type" value="diffWords" checked> Words</label>
 	<label title="Press 3"><input type="radio" name="diff_type" value="diffLines"> Lines</label>
 	<label title="Press 4"><input type="radio" name="diff_type" value="diffPatch"> Patch</label>
+	<span id="scroll-lock" title="Toggle scroll sync">🔗</span>
 </div>
 
 <a href="#" onclick="alert('I got really tired of always having to search for a tool to compare text online and having to finding one with no BS - so got a memorable domain and made the tool I would be looking for myself.\n\nEnjoy...\n\n@rangelwulff');return false;" class="source">Why?</a>
@@ -179,6 +180,43 @@ document.addEventListener('keydown', function(e) {
 	if (e.key === '3') { radio[2].click(); }
 	if (e.key === '4') { radio[3].click(); }
 });
+
+// Scroll sync
+var scrollLockEnabled = true;
+var scrollLockBtn = document.getElementById('scroll-lock');
+var scrollPanels = document.querySelectorAll('td > div');
+var scrollSource = null;
+
+scrollLockBtn.onclick = function() {
+	scrollLockEnabled = !scrollLockEnabled;
+	scrollLockBtn.style.opacity = scrollLockEnabled ? '1' : '0.3';
+};
+
+function syncScroll(source) {
+	if (!scrollLockEnabled) return;
+	if (scrollSource && scrollSource !== source) return;
+	scrollSource = source;
+
+	var maxScroll = source.scrollHeight - source.clientHeight;
+	var pct = maxScroll > 0 ? source.scrollTop / maxScroll : 0;
+
+	for (var j = 0; j < scrollPanels.length; j++) {
+		if (scrollPanels[j] !== source) {
+			var targetMax = scrollPanels[j].scrollHeight - scrollPanels[j].clientHeight;
+			scrollPanels[j].scrollTop = pct * targetMax;
+		}
+	}
+
+	requestAnimationFrame(function() {
+		scrollSource = null;
+	});
+}
+
+for (var k = 0; k < scrollPanels.length; k++) {
+	(function(panel) {
+		panel.addEventListener('scroll', function() { syncScroll(panel); }, {passive: true});
+	})(scrollPanels[k]);
+}
 </script>
 </body>
 </html>

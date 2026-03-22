@@ -80,7 +80,13 @@ ins {
 #settings label {
 	margin-left: 1em;
 	cursor: pointer;
+}
 
+#scroll-lock {
+	margin-left: 2em;
+	cursor: pointer;
+	transition: opacity 0.2s;
+	font-size: 14px;
 }
 
 #settings label input{
