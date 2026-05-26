@@ -9,7 +9,7 @@ html, body {
 	line-height: 1.5em;
 }
 body {
-	padding: 15px 5px 15px 5px;
+	padding: 3px 5px 15px 5px;
 	
 	-webkit-box-sizing: border-box;
 	-moz-box-sizing: border-box;
@@ -27,7 +27,7 @@ table {
 td {
 	box-sizing:border-box;
 	width: 33.3333%;
-	padding: 4px 4px;
+	padding: 4px 4px 35px 4px;
 	border: 0px solid transparent;
 }
 td div {
@@ -61,6 +61,18 @@ ins {
 	padding-bottom: 2em;
 }
 
+#result.loading {
+	color: #999;
+	text-align: center;
+	padding-top: 2em;
+	animation: pulse 1s ease-in-out infinite;
+}
+
+@keyframes pulse {
+	0%, 100% { opacity: 0.3; }
+	50% { opacity: 1; }
+}
+
 #settings {
 	position: absolute;
 	bottom: 5px;
@@ -87,6 +99,12 @@ ins {
 	cursor: pointer;
 	transition: opacity 0.2s;
 	font-size: 14px;
+	padding: 4px 8px;
+	border-radius: 4px;
+}
+
+#scroll-lock:hover {
+	background: rgba(255, 255, 255, 0.6);
 }
 
 #settings label input{
@@ -141,4 +159,5 @@ ins {
 
 #a,#b{
 padding:10px;
+padding-bottom:2em;
 }
