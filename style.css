@@ -31,10 +31,12 @@ td {
 	border: 0px solid transparent;
 }
 td div {
-	overflow: auto;
+	overflow-y: auto;
+	overflow-x: hidden;
 	font: 1em;
 	text-align: left;
 	white-space: pre-wrap;
+	overflow-wrap: anywhere;
 }
 h1 {
 	display: inline;
@@ -61,6 +63,35 @@ ins {
 	padding-bottom: 2em;
 }
 
+td.result-cell {
+	position: relative;
+}
+
+#minimap {
+	position: absolute;
+	right: -6px;
+	width: 8px;
+	background: transparent;
+	cursor: pointer;
+	border-radius: 2px;
+	overflow: hidden;
+	opacity: 0.4;
+	transition: opacity 4.0s ease;
+}
+#minimap:hover {
+	opacity: 1;
+	transition: opacity 0.2s ease;
+}
+
+#minimap > span {
+	position: absolute;
+	left: 0;
+	right: 0;
+}
+
+#minimap > span.mm-ins { background: #36B37E; }
+#minimap > span.mm-del { background: #DE350B; }
+
 #result.loading {
 	color: #999;
 	text-align: center;
@@ -76,7 +107,8 @@ ins {
 #settings {
 	position: absolute;
 	bottom: 5px;
-	left: 50%;               
+	left: 50%;
+	z-index: 10;
   transform: translateX(-50%);
 	height: 2em;
 	line-height: 2em;
@@ -94,8 +126,7 @@ ins {
 	cursor: pointer;
 }
 
-#scroll-lock {
-	margin-left: 2em;
+.emoji-btn {
 	cursor: pointer;
 	transition: opacity 0.2s;
 	font-size: 14px;
@@ -103,8 +134,28 @@ ins {
 	border-radius: 4px;
 }
 
-#scroll-lock:hover {
+.emoji-btn:hover {
 	background: rgba(255, 255, 255, 0.6);
+}
+
+.emoji-btn.disabled {
+	opacity: 1;
+}
+
+.emoji-btn.disabled:hover {
+	background: rgba(255, 255, 255, 0.6);
+}
+
+.emoji-btn.disabled span {
+	opacity: 0.3;
+}
+
+#scroll-lock {
+	margin-left: 2em;
+}
+
+#line-break-toggle {
+	margin-left: 1em;
 }
 
 #settings label input{

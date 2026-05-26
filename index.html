@@ -32,11 +32,12 @@
 
 <div id="settings">
 	<h1>Diff</h1>
-	<label title="Press 1"><input type="radio" name="diff_type" value="diffChars" > Chars</label>
-	<label title="Press 2"><input type="radio" name="diff_type" value="diffWords" checked> Words</label>
-	<label title="Press 3"><input type="radio" name="diff_type" value="diffLines"> Lines</label>
-	<label title="Press 4"><input type="radio" name="diff_type" value="diffPatch"> Patch</label>
-	<span id="scroll-lock" title="Toggle scroll sync">⛓️</span>
+	<label title="[Press 1]"><input type="radio" name="diff_type" value="diffChars" > Chars</label>
+	<label title="[Press 2]"><input type="radio" name="diff_type" value="diffWords" checked> Words</label>
+	<label title="[Press 3]"><input type="radio" name="diff_type" value="diffLines"> Lines</label>
+	<label title="[Press 4]"><input type="radio" name="diff_type" value="diffPatch"> Patch</label>
+	<span id="scroll-lock" class="emoji-btn" title="Toggle scroll sync [Press 5]"><span>⛓️</span></span>
+	<span id="line-break-toggle" class="emoji-btn" title="Toggle line breaks [Press 6]"><span>↩</span></span>
 </div>
 
 <a href="#" onclick="alert('I got really tired of always having to search for a tool to compare text online and having to finding one with no BS - so got a memorable domain and made the tool I would be looking for myself.\n\nEnjoy...\n\n@rangelwulff');return false;" class="source">Why?</a>
@@ -48,7 +49,7 @@
 No ads, no tracking, no BS. 
 
 See the diff per char, word, line, or get the patch.</div></td>
-		<td><div style="padding-top: 10px;"><pre id="result"></pre></div></td>
+		<td class="result-cell"><div style="padding-top: 10px;"><pre id="result"></pre></div><div id="minimap" title="Change overview"></div></td>
 		<td><div contenteditable="true" id="b">Highlight the differences between two texts. 
 
 No ads, no tracking, no BS. 
@@ -61,22 +62,33 @@ Diff per char, word, line, or get the patch.</div></td>
 var a = document.getElementById('a');
 var b = document.getElementById('b');
 var result = document.getElementById('result');
+var minimap = document.getElementById('minimap');
+var resultScroller = result.parentNode;
 
 function loadFromStorage() {
 	try {
 		var data = JSON.parse(localStorage.getItem('diffData'));
-		if (data && typeof data.a === 'string' && typeof data.b === 'string') {
-			a.textContent = data.a;
-			b.textContent = data.b;
+		if (!data) return;
+		if (typeof data.a === 'string') a.textContent = data.a;
+		if (typeof data.b === 'string') b.textContent = data.b;
+		if (typeof data.diffType === 'string') {
+			var r = document.querySelector('#settings [name="diff_type"][value="' + data.diffType + '"]');
+			if (r) r.checked = true;
 		}
+		if (data.scrollLock === false) document.getElementById('scroll-lock').click();
+		if (data.lineBreak === false) document.getElementById('line-break-toggle').click();
 	} catch(e) {}
 }
 
 function saveToStorage() {
 	try {
+		var checked = document.querySelector('#settings [name="diff_type"]:checked');
 		var data = {
 			a: a.textContent,
-			b: b.textContent
+			b: b.textContent,
+			diffType: checked ? checked.value : 'diffWords',
+			scrollLock: scrollLockEnabled,
+			lineBreak: lineBreakEnabled
 		};
 		localStorage.setItem('diffData', JSON.stringify(data));
 	} catch(e) {}
@@ -88,8 +100,6 @@ var changeTimer = null;
 
 function changed() {
 	diffGen++;
-	result.textContent = '⋯';
-	result.className = 'loading';
 	clearTimeout(changeTimer);
 	changeTimer = setTimeout(function() {
 		diffWorker.postMessage({
@@ -102,6 +112,8 @@ function changed() {
 }
 
 function renderDiff(diff) {
+	var prevScrollTop = resultScroller.scrollTop;
+	var prevScrollLeft = resultScroller.scrollLeft;
 	var fragment = document.createDocumentFragment();
 	for (var i = 0; i < diff.length; i++) {
 		var node;
@@ -124,7 +136,111 @@ function renderDiff(diff) {
 	}
 	result.textContent = '';
 	result.appendChild(fragment);
+	resultScroller.scrollTop = prevScrollTop;
+	resultScroller.scrollLeft = prevScrollLeft;
+	renderMinimap(diff);
 }
+
+function alignMinimap() {
+	var offset = 15;
+	minimap.style.top = (resultScroller.offsetTop + offset) + 'px';
+	minimap.style.height = Math.max(0, resultScroller.offsetHeight - offset) + 'px';
+}
+
+function renderMinimap() {
+	alignMinimap();
+	minimap.textContent = '';
+	var H = minimap.clientHeight;
+	if (!H) {
+		requestAnimationFrame(renderMinimap);
+		return;
+	}
+	var contentH = resultScroller.scrollHeight;
+	if (!contentH) return;
+	var sr = resultScroller.getBoundingClientRect();
+	var marks = result.querySelectorAll('ins, del');
+	var slices = [];
+	for (var i = 0; i < marks.length; i++) {
+		var m = marks[i];
+		var mr = m.getBoundingClientRect();
+		var top = (mr.top - sr.top) + resultScroller.scrollTop;
+		var y = (top / contentH) * H;
+		var hh = Math.max(3, (mr.height / contentH) * H);
+		if (y < 0) y = 0;
+		if (y + hh > H) y = Math.max(0, H - hh);
+		slices.push({type: m.tagName === 'INS' ? 'mm-ins' : 'mm-del', top: y, bottom: y + hh});
+	}
+	slices.sort(function(a, b) { return a.top - b.top; });
+	var GAP = 4;
+	var merged = [];
+	for (var j = 0; j < slices.length; j++) {
+		var s = slices[j];
+		var prev = merged[merged.length - 1];
+		if (prev && s.top <= prev.bottom + GAP) {
+			if (prev.type === s.type) {
+				prev.bottom = Math.max(prev.bottom, s.bottom);
+			} else {
+				prev.bottom = s.top;
+				merged.push(s);
+			}
+		} else {
+			merged.push(s);
+		}
+	}
+	var frag = document.createDocumentFragment();
+	for (var k = 0; k < merged.length; k++) {
+		var sl = merged[k];
+		var span = document.createElement('span');
+		span.className = sl.type;
+		span.style.top = sl.top + 'px';
+		span.style.height = (sl.bottom - sl.top) + 'px';
+		frag.appendChild(span);
+	}
+	minimap.appendChild(frag);
+}
+
+minimap.addEventListener('click', function(e) {
+	var rect = minimap.getBoundingClientRect();
+	var pct = (e.clientY - rect.top) / rect.height;
+	var contentY = pct * resultScroller.scrollHeight;
+	var maxY = resultScroller.scrollHeight - resultScroller.clientHeight;
+	resultScroller.scrollTop = Math.max(0, Math.min(maxY, contentY - resultScroller.clientHeight / 2));
+
+	// Also center horizontally on the nearest mark
+	var marks = result.querySelectorAll('ins, del');
+	if (marks.length) {
+		var sr = resultScroller.getBoundingClientRect();
+		var nearest = null, bestDist = Infinity;
+		for (var i = 0; i < marks.length; i++) {
+			var mr = marks[i].getBoundingClientRect();
+			var mTop = (mr.top - sr.top) + resultScroller.scrollTop;
+			var d = Math.abs(mTop - contentY);
+			if (d < bestDist) { bestDist = d; nearest = marks[i]; }
+		}
+		if (nearest) {
+			var nr = nearest.getBoundingClientRect();
+			var mLeft = (nr.left - sr.left) + resultScroller.scrollLeft;
+			var maxX = resultScroller.scrollWidth - resultScroller.clientWidth;
+			resultScroller.scrollLeft = Math.max(0, Math.min(maxX, mLeft - resultScroller.clientWidth / 2));
+		}
+	}
+	syncScroll(resultScroller);
+});
+
+function forwardWheel(e) {
+	if (e.target.closest('#a, #b, td > div:not(#minimap)')) return;
+	resultScroller.scrollTop += e.deltaY;
+	resultScroller.scrollLeft += e.deltaX;
+	syncScroll(resultScroller);
+	e.preventDefault();
+}
+window.addEventListener('wheel', forwardWheel, {passive: false});
+
+var resizeTimer = null;
+window.addEventListener('resize', function() {
+	clearTimeout(resizeTimer);
+	resizeTimer = setTimeout(renderMinimap, 100);
+});
 
 diffWorker.onmessage = function(e) {
 	if (e.data.gen !== diffGen) return;
@@ -161,6 +277,7 @@ for (var i = 0; i < radio.length; i++) {
 	radio[i].onchange = function(e) {
 		onDiffTypeChange(e.target);
 		changed();
+		saveToStorage();
 	}
 }
 
@@ -170,17 +287,39 @@ document.addEventListener('keydown', function(e) {
 	if (e.key === '3') { radio[2].click(); }
 	if (e.key === '4') { radio[3].click(); }
 	if (e.key === '5') { scrollLockBtn.click(); }
+	if (e.key === '6') { lineBreakToggle.click(); }
 });
 
 // Scroll sync
 var scrollLockEnabled = true;
 var scrollLockBtn = document.getElementById('scroll-lock');
-var scrollPanels = document.querySelectorAll('td > div');
+var scrollPanels = document.querySelectorAll('td > div:not(#minimap)');
 var scrollSource = null;
 
 scrollLockBtn.onclick = function() {
 	scrollLockEnabled = !scrollLockEnabled;
-	scrollLockBtn.style.opacity = scrollLockEnabled ? '1' : '0.3';
+	scrollLockBtn.classList.toggle('disabled', !scrollLockEnabled);
+	saveToStorage();
+};
+
+// Line break toggle
+var lineBreakEnabled = true;
+var lineBreakToggle = document.getElementById('line-break-toggle');
+
+lineBreakToggle.onclick = function() {
+	lineBreakEnabled = !lineBreakEnabled;
+	lineBreakToggle.classList.toggle('disabled', !lineBreakEnabled);
+	
+	// Toggle white-space property for all text areas
+	var textAreas = document.querySelectorAll('#a, #b, #result');
+	for (var i = 0; i < textAreas.length; i++) {
+		textAreas[i].style.whiteSpace = lineBreakEnabled ? 'pre-wrap' : 'pre';
+	}
+	for (var j = 0; j < scrollPanels.length; j++) {
+		scrollPanels[j].style.overflowX = lineBreakEnabled ? 'hidden' : 'auto';
+	}
+	renderMinimap();
+	saveToStorage();
 };
 
 function syncScroll(source) {
@@ -190,11 +329,15 @@ function syncScroll(source) {
 
 	var maxScroll = source.scrollHeight - source.clientHeight;
 	var pct = maxScroll > 0 ? source.scrollTop / maxScroll : 0;
+	var maxScrollLeft = source.scrollWidth - source.clientWidth;
+	var pctLeft = maxScrollLeft > 0 ? source.scrollLeft / maxScrollLeft : 0;
 
 	for (var j = 0; j < scrollPanels.length; j++) {
 		if (scrollPanels[j] !== source) {
 			var targetMax = scrollPanels[j].scrollHeight - scrollPanels[j].clientHeight;
 			scrollPanels[j].scrollTop = pct * targetMax;
+			var targetMaxLeft = scrollPanels[j].scrollWidth - scrollPanels[j].clientWidth;
+			scrollPanels[j].scrollLeft = pctLeft * targetMaxLeft;
 		}
 	}
 
