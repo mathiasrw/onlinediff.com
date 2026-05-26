@@ -166,15 +166,11 @@ td.result-cell {
 
 .source {
 	position: absolute;
-	left: 10px; 
-	bottom: 10px;
-
-	
-	color:darkgray;
+	left: 12px;
+	bottom: -1px;
+	color: darkgray;
 	text-decoration: none;
-	   left: 20px;
-    bottom: 13px;
-    font-size: 10px;
+	font-size: 10px;
         user-select: none; /* Prevent text selection */
     -webkit-user-select: none; /* For WebKit browsers like Chrome and Safari */
     -moz-user-select: none; /* For Firefox */
