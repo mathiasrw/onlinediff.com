@@ -40,7 +40,7 @@
 	<span id="line-break-toggle" class="emoji-btn" title="Toggle line breaks [Press 6]"><span>↩</span></span>
 </div>
 
-<a href="#" onclick="alert('I got really tired of always having to search for a tool to compare text online and having to finding one with no BS - so got a memorable domain and made the tool I would be looking for myself. No tracking. No ads. No BS.\n\nEnjoy...\n\n@rangelwulff');return false;" class="source">Why?</a>
+<a href="#" id="about" class="source" title="About Online Diff" aria-label="About Online Diff">i</a>
 
 <table>
 	<tr>
@@ -254,13 +254,117 @@ window.onload = function() {
 	changed();
 };
 
-a.onpaste = a.onchange =
-b.onpaste = b.onchange = changed;
+a.onchange = b.onchange = changed;
 
 if ('oninput' in a) {
 	a.oninput = b.oninput = changed;
 } else {
 	a.onkeyup = b.onkeyup = changed;
+}
+
+// Put only plain text on the clipboard, so pasting into Word etc.
+// does not carry the monospace font from the page's CSS.
+function plainTextClipboard(e) {
+	var sel = window.getSelection();
+	if (!sel || sel.isCollapsed) return;
+	var text = sel.toString();
+	if (!text) return;
+	var cd = e.clipboardData;
+	if (!cd) return;
+	cd.setData('text/plain', text);
+	e.preventDefault();
+	if (e.type === 'cut') document.execCommand('delete');
+}
+
+// Dragging text out takes a different path than copy.
+function plainTextDrag(e) {
+	var sel = window.getSelection();
+	if (!sel || sel.isCollapsed) return;
+	var text = sel.toString();
+	if (!text) return;
+	var dt = e.dataTransfer;
+	if (!dt) return;
+	dt.clearData();
+	dt.setData('text/plain', text);
+	internalDrag = true;
+	// no preventDefault here - that would cancel the drag
+}
+
+var internalDrag = false;
+document.addEventListener('dragend', function() { internalDrag = false; });
+
+// Unicode's own definition of "carries no visible content" - 4174 code points
+// covering zero-width spaces, bidi controls, variation selectors, tag chars and
+// the ranges reserved for exactly this. Using the standard's property rather
+// than a hand-kept list means we inherit its coverage and its future updates.
+// In a diff these matter because they show up as changes you cannot see.
+var CLEAN = /\u{1F3F4}[\u{E0020}-\u{E007E}]+\u{E007F}|\p{Default_Ignorable_Code_Point}/gu;
+
+function stripInvisible(text) {
+	return text.replace(CLEAN, function(match) {
+		// A complete flag sequence (waving black flag + tag letters + cancel tag)
+		// is the only live use of the tag block - keep it whole. Loose tag chars
+		// not forming a flag are still stripped.
+		if (match.codePointAt(0) === 0x1F3F4) return match;
+		// The two joiners with real rendering purpose: stripping these visibly
+		// breaks emoji, turning a family into separate people and a red heart grey.
+		if (match === '\u200D' || match === '\uFE0F') return match;
+		return '';
+	});
+}
+
+// Paste and drop are the only ways this text can arrive from elsewhere,
+// so they are the only places worth cleaning.
+function cleanPaste(e) {
+	var cd = e.clipboardData;
+	if (!cd) return;
+	var text = cd.getData('text/plain');
+	if (!text) return;
+	e.preventDefault();
+	document.execCommand('insertText', false, stripInvisible(text));
+	changed();
+}
+
+function caretRangeAt(x, y) {
+	if (document.caretRangeFromPoint) return document.caretRangeFromPoint(x, y);
+	if (document.caretPositionFromPoint) {
+		var pos = document.caretPositionFromPoint(x, y);
+		if (!pos) return null;
+		var r = document.createRange();
+		r.setStart(pos.offsetNode, pos.offset);
+		r.collapse(true);
+		return r;
+	}
+	return null;
+}
+
+function cleanDrop(e) {
+	// A drag that started inside our own panes is a move of already-clean
+	// text. Let the browser handle it natively, or preventing the default
+	// would insert a copy without removing the original.
+	if (internalDrag) return;
+	var dt = e.dataTransfer;
+	if (!dt) return;
+	var text = dt.getData('text/plain');
+	if (!text) return;
+	e.preventDefault();
+	var range = caretRangeAt(e.clientX, e.clientY);
+	if (range) {
+		var sel = window.getSelection();
+		sel.removeAllRanges();
+		sel.addRange(range);
+	}
+	document.execCommand('insertText', false, stripInvisible(text));
+	changed();
+}
+
+var panes = [a, b];
+for (var p = 0; p < panes.length; p++) {
+	panes[p].addEventListener('copy', plainTextClipboard);
+	panes[p].addEventListener('cut', plainTextClipboard);
+	panes[p].addEventListener('dragstart', plainTextDrag);
+	panes[p].addEventListener('paste', cleanPaste);
+	panes[p].addEventListener('drop', cleanDrop);
 }
 
 window.onbeforeunload = function() {
@@ -281,7 +385,32 @@ for (var i = 0; i < radio.length; i++) {
 	}
 }
 
+function isTyping(el) {
+	if (!el) return false;
+	if (el.isContentEditable) return true;
+	var tag = el.tagName;
+	if (tag === 'TEXTAREA' || tag === 'SELECT') return true;
+	if (tag === 'INPUT') {
+		var type = (el.type || 'text').toLowerCase();
+		return type !== 'radio' && type !== 'checkbox' && type !== 'button' && type !== 'submit';
+	}
+	return false;
+}
+
 document.addEventListener('keydown', function(e) {
+	if (e.metaKey || e.ctrlKey || e.altKey) return;
+	// Esc leaves the text box so the number shortcuts take over again
+	if (e.key === 'Escape' || e.key === 'Esc') {
+		var el = document.activeElement;
+		if (isTyping(el)) {
+			el.blur();
+			if (window.getSelection) window.getSelection().removeAllRanges();
+			saveToStorage();
+			e.preventDefault();
+		}
+		return;
+	}
+	if (isTyping(e.target) || isTyping(document.activeElement)) return;
 	if (e.key === '1') { radio[0].click(); }
 	if (e.key === '2') { radio[1].click(); }
 	if (e.key === '3') { radio[2].click(); }
@@ -289,6 +418,12 @@ document.addEventListener('keydown', function(e) {
 	if (e.key === '5') { scrollLockBtn.click(); }
 	if (e.key === '6') { lineBreakToggle.click(); }
 });
+
+// About
+document.getElementById('about').onclick = function() {
+	alert('I got really tired of always having to search for a tool to compare text online and having to finding one with no BS - so got a memorable domain and made the tool I would be looking for myself. No tracking. No ads. No BS.\n\nEnjoy...\n\n@rangelwulff');
+	return false;
+};
 
 // Scroll sync
 var scrollLockEnabled = true;

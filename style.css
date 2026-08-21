@@ -166,20 +166,32 @@ td.result-cell {
 
 .source {
 	position: absolute;
-	left: 12px;
-	bottom: -1px;
+	left: 10px;
+	bottom: 3px;
+	box-sizing: border-box;
+	width: 11px;
+	height: 11px;
+	line-height: 11px;
+	text-align: center;
+	border: 1px solid darkgray;
+	border-radius: 50%;
 	color: darkgray;
 	text-decoration: none;
-	font-size: 10px;
+	font-family: Georgia, 'Times New Roman', serif;
+	font-style: italic;
+	font-size: 8px;
+	opacity: 0.7;
+	transition: opacity 0.2s, color 0.2s, border-color 0.2s;
         user-select: none; /* Prevent text selection */
     -webkit-user-select: none; /* For WebKit browsers like Chrome and Safari */
     -moz-user-select: none; /* For Firefox */
     -ms-user-select: none; /* For older versions of Internet Explorer */
 }
 
-.source hover {
-	color:cornflowerblue;
-	text-decoration: underline;
+.source:hover {
+	color: cornflowerblue;
+	border-color: cornflowerblue;
+	opacity: 1;
 }
 
 
