@@ -53,6 +53,11 @@ ins {
 	text-decoration: none;
 }
 
+/* Round 2: the exact chars that changed, painted in a stronger tone on top of
+   the del/ins tint. Background only - must never affect layout. */
+del .chg { background: #FFBDAD; }
+ins .chg { background: #ABF5D1; }
+
 .chunk-header {
 	color: #8a008b;
 	text-decoration: none;

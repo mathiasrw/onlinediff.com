@@ -111,10 +111,13 @@ function changed() {
 	}, 100);
 }
 
+var diffNodes = [];
+
 function renderDiff(diff) {
 	var prevScrollTop = resultScroller.scrollTop;
 	var prevScrollLeft = resultScroller.scrollLeft;
 	var fragment = document.createDocumentFragment();
+	diffNodes = new Array(diff.length);
 	for (var i = 0; i < diff.length; i++) {
 		var node;
 		if (diff[i].removed) {
@@ -132,6 +135,7 @@ function renderDiff(diff) {
 			node.setAttribute('class', 'identical');
 			node.appendChild(document.createTextNode(diff[i].value));
 		}
+		diffNodes[i] = node;
 		fragment.appendChild(node);
 	}
 	result.textContent = '';
@@ -139,6 +143,55 @@ function renderDiff(diff) {
 	resultScroller.scrollTop = prevScrollTop;
 	resultScroller.scrollLeft = prevScrollLeft;
 	renderMinimap(diff);
+}
+
+// Round 2: highlight the exact chars that changed inside each del/ins.
+// Runs in its own worker so the primary diff is never blocked by it. If a
+// newer coarse diff arrives while it is still busy we terminate it and start a
+// fresh one - cheapest possible preemption. Only the paint changes, never the
+// text, so scroll position and the minimap are untouched.
+var refineWorker = null;
+var refineBusy = false;
+
+function onRefineMessage(e) {
+	if (e.data.gen !== diffGen) return;
+	if (e.data.done) {
+		refineBusy = false;
+		return;
+	}
+	var list = e.data.refine;
+	for (var k = 0; k < list.length; k++) {
+		var node = diffNodes[list[k].i];
+		if (!node) continue;
+		var parts = list[k].p;
+		var frag = document.createDocumentFragment();
+		for (var q = 0; q < parts.length; q++) {
+			if (parts[q][1]) {
+				var span = document.createElement('span');
+				span.className = 'chg';
+				span.appendChild(document.createTextNode(parts[q][0]));
+				frag.appendChild(span);
+			} else {
+				frag.appendChild(document.createTextNode(parts[q][0]));
+			}
+		}
+		node.textContent = '';
+		node.appendChild(frag);
+	}
+}
+
+function startRefine(gen, diff) {
+	if (refineWorker && refineBusy) {
+		refineWorker.terminate();
+		refineWorker = null;
+	}
+	if (window.diffType === 'diffChars') return; // already as fine as it gets
+	if (!refineWorker) {
+		refineWorker = new Worker('refine-worker.js');
+		refineWorker.onmessage = onRefineMessage;
+	}
+	refineBusy = true;
+	refineWorker.postMessage({gen: gen, diff: diff, diffType: window.diffType});
 }
 
 function alignMinimap() {
@@ -246,6 +299,7 @@ diffWorker.onmessage = function(e) {
 	if (e.data.gen !== diffGen) return;
 	result.className = '';
 	renderDiff(e.data.diff);
+	startRefine(e.data.gen, e.data.diff);
 };
 
 window.onload = function() {
@@ -313,6 +367,17 @@ function stripInvisible(text) {
 	});
 }
 
+// Insert plain text at the caret, keeping newlines as newlines.
+// execCommand('insertText') splits on \n and wraps each line in a <div>, which
+// textContent then flattens - every line break lost. insertHTML with the text
+// escaped goes through the same path as a native paste: in this pre-wrap,
+// plaintext-only box the \n stay as text, and it is on the native undo stack.
+function insertPlainText(text) {
+	text = stripInvisible(text).replace(/\r\n?/g, '\n');
+	var html = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+	document.execCommand('insertHTML', false, html);
+}
+
 // Paste and drop are the only ways this text can arrive from elsewhere,
 // so they are the only places worth cleaning.
 function cleanPaste(e) {
@@ -321,7 +386,7 @@ function cleanPaste(e) {
 	var text = cd.getData('text/plain');
 	if (!text) return;
 	e.preventDefault();
-	document.execCommand('insertText', false, stripInvisible(text));
+	insertPlainText(text);
 	changed();
 }
 
@@ -354,7 +419,7 @@ function cleanDrop(e) {
 		sel.removeAllRanges();
 		sel.addRange(range);
 	}
-	document.execCommand('insertText', false, stripInvisible(text));
+	insertPlainText(text);
 	changed();
 }
 
@@ -421,7 +486,7 @@ document.addEventListener('keydown', function(e) {
 
 // About
 document.getElementById('about').onclick = function() {
-	alert('I got really tired of always having to search for a tool to compare text online and having to finding one with no BS - so got a memorable domain and made the tool I would be looking for myself. No tracking. No ads. No BS.\n\nEnjoy...\n\n@rangelwulff');
+	alert('I got really tired of always having to search for a tool to compare text online and having to click a few times to find one with no BS - so I got a memorable domain and made the tool I would be looking for myself. No tracking. No watermarks. No ads.\n\nEnjoy...\n\n@rangelwulff');
 	return false;
 };
 
