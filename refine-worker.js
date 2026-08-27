@@ -2,9 +2,10 @@
 //
 // diff-worker.js produces the coarse diff (words/lines/patch) and is kept
 // deliberately separate so that it is never blocked by this work. This worker
-// takes the finished coarse diff, finds adjacent removed/added pairs and runs a
-// char diff on each, so the characters that actually changed can be painted in
-// a stronger tone on top of the existing del/ins background.
+// takes the finished coarse diff, finds adjacent removed/added pairs and diffs
+// each pair one granularity finer than the primary diff (lines/patch -> words,
+// words -> chars), so the parts that actually changed can be painted in a
+// stronger tone on top of the existing del/ins background.
 //
 // The output never changes the text or its length - only how it is painted -
 // so layout, scroll position and the minimap are unaffected.
@@ -40,10 +41,13 @@ function splitLines(s) {
 	return out;
 }
 
-// Char diff of one removed line against one added line.
+// Diff one removed line against one added line, one granularity finer than
+// the primary diff: lines/patch refine per word, words refine per char.
+// diffWordsWithSpace rather than diffWords: diffWords ignores whitespace-only
+// differences, so its output would not reconstruct the original text exactly.
 // Returns [partsForDel, partsForIns], each a list of [text, changed].
-function diffPair(delText, insText) {
-	var d = Diff.diffChars(delText, insText);
+function diffPair(delText, insText, diffFn) {
+	var d = diffFn(delText, insText);
 	var delParts = [], insParts = [];
 	for (var i = 0; i < d.length; i++) {
 		var e = d[i];
@@ -64,7 +68,7 @@ function diffPair(delText, insText) {
 // For lines mode an entry holds many lines; for words/patch it holds one
 // word-chunk / one line. Either way we split into lines and pair line n with
 // line n. Patch lines carry a leading +/- that must not take part in the diff.
-function refineRun(dels, ins, isPatch, out) {
+function refineRun(dels, ins, isPatch, diffFn, out) {
 	var delLines = [], insLines = [];
 	var j, k, lines;
 	for (j = 0; j < dels.length; j++) {
@@ -101,7 +105,7 @@ function refineRun(dels, ins, isPatch, out) {
 			dPrefix = dText.slice(0, 1); dText = dText.slice(1);
 			iPrefix = iText.slice(0, 1); iText = iText.slice(1);
 		}
-		var r = diffPair(dText, iText);
+		var r = diffPair(dText, iText, diffFn);
 		if (dPrefix) add(dl.i, [[dPrefix, false]]);
 		add(dl.i, r[0]);
 		if (iPrefix) add(il.i, [[iPrefix, false]]);
@@ -121,6 +125,8 @@ self.onmessage = function(e) {
 	var diff = data.diff;
 	var gen = data.gen;
 	var isPatch = data.diffType === 'diffPatch';
+	// One granularity finer than the primary diff
+	var diffFn = data.diffType === 'diffWords' ? Diff.diffChars : Diff.diffWordsWithSpace;
 	var batch = [];
 
 	function flush() {
@@ -138,7 +144,7 @@ self.onmessage = function(e) {
 			i++;
 		}
 		if (dels.length && ins.length) {
-			refineRun(dels, ins, isPatch, batch);
+			refineRun(dels, ins, isPatch, diffFn, batch);
 			if (batch.length >= BATCH) flush();
 		}
 	}

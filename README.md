@@ -9,7 +9,8 @@ Two web workers, kept separate on purpose:
    in `diff.js`). This is what must stay fast while typing; it is rendered as
    soon as it arrives.
 2. `refine-worker.js` – round 2. Takes the finished coarse diff, pairs adjacent
-   removed/added lines and char-diffs each pair so the exact changed characters
+   removed/added lines and diffs each pair one granularity finer than the
+   primary diff (lines/patch → words, words → chars) so the exact changed parts
    get a stronger tint (`.chg`) on top of the `del`/`ins` background. Never
    changes the text or its length, so layout, scroll position and the minimap
    are untouched. If a newer coarse diff arrives while it is still busy the main
