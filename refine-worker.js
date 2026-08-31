@@ -18,8 +18,9 @@
 // Ideas for later (intentionally not done yet, keep round 2 simple first):
 //  - Similarity threshold: skip pairs where more than ~50-60% of the chars
 //    differ, so a fully rewritten line stays plain instead of confetti.
-//  - Gap merging: absorb 1-2 char equal runs between two changes into one
-//    changed span (diff-match-patch style "semantic cleanup").
+//  - Gap merging beyond whitespace: absorb 1-2 char equal runs between two
+//    changes into one changed span (diff-match-patch style "semantic
+//    cleanup"). Whitespace-only gaps are already merged, see mergeSpaceGaps.
 //  - Size cap: skip or chunk pairs above a few thousand chars per line, as
 //    jsdiff's char diff is O(ND) and very dissimilar long lines get slow.
 
@@ -63,12 +64,34 @@ function diffPair(delText, insText, diffFn) {
 	return [delParts, insParts];
 }
 
+// Word tokenisers give runs of whitespace their own token, so several changed
+// words in a row come back as changed-word, unchanged-space, changed-word and
+// paint as stripes with unmarked gaps - the eye reads that as several separate
+// changes rather than one. Absorbing a gap that is only whitespace AND sits
+// between two changed parts makes the run read as one continuous block.
+// Newlines are deliberately not absorbed: a marked newline stretches its
+// background to the end of the line, which looks like a change that is not
+// there. Anything that is not pure whitespace (" in it" between two changed
+// words) is left alone, because there the gap really is unchanged.
+var SPACE_GAP = /^[^\S\r\n]+$/;
+
+function mergeSpaceGaps(parts) {
+	for (var i = 1; i < parts.length - 1; i++) {
+		if (!parts[i][1] && parts[i - 1][1] && parts[i + 1][1] && SPACE_GAP.test(parts[i][0])) {
+			parts[i - 1][0] += parts[i][0] + parts[i + 1][0];
+			parts.splice(i, 2);
+			i--;
+		}
+	}
+	return parts;
+}
+
 // Refine one run of adjacent removed/added entries.
 // dels / ins are lists of {i: indexInDiff, value}.
 // For lines mode an entry holds many lines; for words/patch it holds one
 // word-chunk / one line. Either way we split into lines and pair line n with
 // line n. Patch lines carry a leading +/- that must not take part in the diff.
-function refineRun(dels, ins, isPatch, diffFn, out) {
+function refineRun(dels, ins, isPatch, diffFn, byWords, out) {
 	var delLines = [], insLines = [];
 	var j, k, lines;
 	for (j = 0; j < dels.length; j++) {
@@ -116,7 +139,9 @@ function refineRun(dels, ins, isPatch, diffFn, out) {
 	for (j = n; j < insLines.length; j++) add(insLines[j].i, [[insLines[j].text, false]]);
 
 	for (var key in parts) {
-		if (parts.hasOwnProperty(key)) out.push({i: +key, p: parts[key]});
+		if (parts.hasOwnProperty(key)) {
+			out.push({i: +key, p: byWords ? mergeSpaceGaps(parts[key]) : parts[key]});
+		}
 	}
 }
 
@@ -125,8 +150,11 @@ self.onmessage = function(e) {
 	var diff = data.diff;
 	var gen = data.gen;
 	var isPatch = data.diffType === 'diffPatch';
-	// One granularity finer than the primary diff
-	var diffFn = data.diffType === 'diffWords' ? Diff.diffChars : Diff.diffWordsWithSpace;
+	// One granularity finer than the primary diff: lines/patch -> words,
+	// words -> chars. Only the word level needs the space-gap merge; at char
+	// level every changed char is already adjacent to the next.
+	var byWords = data.diffType !== 'diffWords';
+	var diffFn = byWords ? Diff.diffWordsWithSpace : Diff.diffChars;
 	var batch = [];
 
 	function flush() {
@@ -144,7 +172,7 @@ self.onmessage = function(e) {
 			i++;
 		}
 		if (dels.length && ins.length) {
-			refineRun(dels, ins, isPatch, diffFn, batch);
+			refineRun(dels, ins, isPatch, diffFn, byWords, batch);
 			if (batch.length >= BATCH) flush();
 		}
 	}

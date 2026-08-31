@@ -1,0 +1,18 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Gemini//Flight Itinerary//EN
+BEGIN:VEVENT
+SUMMARY:Flight EK413: SYD to DXB
+DTSTART:20270204T104500Z
+DTEND:20270205T011500Z
+LOCATION:Sydney Airport (SYD)
+DESCRIPTION:Emirates Flight EK413\nDeparture: 21:45 (Sydney Local)\nArrival: 05:15 (Dubai Local)\nAircraft: Airbus A380-800\nClass: Economy / Saver\nStatus: Confirmed
+END:VEVENT
+BEGIN:VEVENT
+SUMMARY:Flight EK151: DXB to CPH
+DTSTART:20270205T043000Z
+DTEND:20270205T113000Z
+LOCATION:Dubai International Airport (DXB)
+DESCRIPTION:Emirates Flight EK151\nDeparture: 08:30 (Dubai Local)\nArrival: 12:30 (Copenhagen Local)\nAircraft: Airbus A380-800\nClass: Economy / Saver\nStatus: Confirmed
+END:VEVENT
+END:VCALENDAR

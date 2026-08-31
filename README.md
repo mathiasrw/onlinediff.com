@@ -23,7 +23,9 @@ would rarely hit and would just hold memory.
 
 - Similarity threshold: skip pairs where more than ~50–60% of the chars differ,
   so a fully rewritten line stays plain instead of confetti.
-- Gap merging: absorb 1–2 char equal runs between two changes into one changed
-  span (diff-match-patch style "semantic cleanup").
+- Gap merging beyond whitespace: absorb 1–2 char equal runs between two changes
+  into one changed span (diff-match-patch style "semantic cleanup"). Whitespace-
+  only gaps between two changed words are already merged (`mergeSpaceGaps`), so
+  a stretch of changed words paints as one block instead of stripes.
 - Size cap: skip or chunk pairs above a few thousand chars per line; jsdiff's
   char diff is O(ND) and very dissimilar long lines get slow.
