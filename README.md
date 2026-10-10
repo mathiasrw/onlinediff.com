@@ -30,6 +30,17 @@ the diff type changes, a worker that is still busy is `terminate()`d and
 replaced: nothing is worked out that nobody is waiting for, and the diff that
 is wanted never waits in line behind one that is not.
 
+### Seeing where the time goes
+
+Both the page and `diff-worker.js` log timings to the console, one line per
+step, all starting with `[diff N]` where N counts the diffs asked for. The
+worker says what it is about to compare before it starts, so a step that never
+comes back can be told from the last line that was printed. `LOG = false` at
+the top of each turns it off.
+
+A fresh worker also prints `[diff] worker started (lines > words > chars)`. If
+that line is missing, the browser is running an older `diff-worker.js`.
+
 No caching of round 2 results: pairs move around on every keystroke so a cache
 would rarely hit and would just hold memory.
 

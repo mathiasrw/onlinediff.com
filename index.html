@@ -97,6 +97,21 @@ function saveToStorage() {
 // A worker cannot be interrupted, only thrown away. So whenever one is still
 // busy on a diff that nobody is waiting for any more it is terminated and
 // replaced, and the diff that is wanted never has to wait in line behind it.
+// Timings in the console, to see where the time goes when a diff is slow. The
+// worker logs its own steps (see diff-worker.js), this is the page's side of
+// it: waiting, drawing, and what got cancelled. Set to false to keep quiet.
+var LOG = true;
+var diffPosted = 0;     // when the diff being worked on was handed to the worker
+var diffPostedGen = 0;  // and which one it is
+
+function log(gen, text) {
+	if (LOG) console.log('[diff ' + gen + '] ' + text);
+}
+
+function ms(since) {
+	return Math.round(performance.now() - since) + ' ms';
+}
+
 function newDiffWorker() {
 	var worker = new Worker('diff-worker.js');
 	worker.onmessage = onDiffMessage;
@@ -136,6 +151,7 @@ function requestDiff(wait) {
 	// no longer on screen. Stop it now, not when the next diff starts, so it
 	// is out of the way and the new worker is up by the time it is needed.
 	if (diffBusy) {
+		log(diffPostedGen, 'page: cancelled after ' + ms(diffPosted) + ', no longer wanted');
 		diffWorker.terminate();
 		diffWorker = newDiffWorker();
 		diffBusy = false;
@@ -144,6 +160,8 @@ function requestDiff(wait) {
 	clearTimeout(changeTimer);
 	changeTimer = setTimeout(function() {
 		diffBusy = true;
+		diffPosted = performance.now();
+		diffPostedGen = diffGen;
 		diffWorker.postMessage({
 			gen: diffGen,
 			diffType: window.diffType,
@@ -160,6 +178,7 @@ function changed() {
 var diffNodes = [];
 
 function renderDiff(diff) {
+	var started = performance.now();
 	var prevScrollTop = resultScroller.scrollTop;
 	var prevScrollLeft = resultScroller.scrollLeft;
 	var fragment = document.createDocumentFragment();
@@ -188,7 +207,10 @@ function renderDiff(diff) {
 	result.appendChild(fragment);
 	resultScroller.scrollTop = prevScrollTop;
 	resultScroller.scrollLeft = prevScrollLeft;
+	var drawn = performance.now();
 	renderMinimap(diff);
+	log(diffGen, 'page: put ' + diff.length + ' parts on the page in ' + Math.round(drawn - started) +
+		' ms, laid out and minimap drawn in ' + ms(drawn));
 	lastDiff = diff;
 	laneMap = undefined;
 	// A new layout: what was lined up before no longer is, line up again
@@ -208,6 +230,7 @@ function onRefineMessage(e) {
 	if (e.data.gen !== diffGen) return;
 	if (e.data.done) {
 		refineBusy = false;
+		log(diffGen, 'page: second pass (exact changes inside each change) done ' + ms(diffPosted) + ' after the diff was started');
 		return;
 	}
 	var list = e.data.refine;
@@ -511,7 +534,9 @@ function updateMarks() {
 	var from = a.contains(sel.anchorNode) ? 'a' : b.contains(sel.anchorNode) ? 'b' : result.contains(sel.anchorNode) ? 'r' : null;
 	if (!from) return;
 	if (laneMap === undefined) {
+		var mapStarted = performance.now();
 		laneMap = buildLaneMap(lastDiff, a.textContent, b.textContent, window.diffType === 'diffPatch');
+		log(diffGen, 'page: map for marking text built in ' + ms(mapStarted) + (laneMap ? '' : ' - it did not check out, no marks'));
 	}
 	if (!laneMap) return;
 	var range = sel.getRangeAt(0);
@@ -664,9 +689,20 @@ function onDiffMessage(e) {
 	if (e.target !== diffWorker) return; // a last word from one already replaced
 	diffBusy = false;
 	if (e.data.gen !== diffGen) return;
+	log(diffGen, 'page: answer back ' + ms(diffPosted) + ' after it was sent to the worker');
 	result.className = '';
 	renderDiff(e.data.diff);
 	setBusy(false);
+	log(diffGen, 'page: handed to the browser ' + ms(diffPosted) + ' after it was sent to the worker');
+	if (LOG) {
+		// The browser still has to paint it, which no script can time from the
+		// inside. The first moment it lets a script run again after a frame is
+		// as close as it gets.
+		var gen = diffGen, posted = diffPosted;
+		requestAnimationFrame(function() {
+			setTimeout(function() { log(gen, 'page: painted ' + ms(posted) + ' after it was sent to the worker'); }, 0);
+		});
+	}
 	startRefine(e.data.gen, e.data.diff);
 }
 

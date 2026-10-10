@@ -1,5 +1,23 @@
 importScripts('diff.js');
 
+// Timings in the console, to see where the time goes when a diff is slow.
+// Every step says what it is about to do before it does it, so one that never
+// comes back can be told from the last line that did get printed. Set to false
+// to keep the console quiet.
+var LOG = true;
+
+function log(gen, text) {
+	if (LOG) console.log('[diff ' + gen + '] ' + text);
+}
+
+function ms(since) {
+	return Math.round(performance.now() - since) + ' ms';
+}
+
+// A fresh worker says so. No such line in the console means the browser is
+// running an older copy of this file.
+if (LOG) console.log('[diff] worker started (lines > words > chars)');
+
 // A plain char or word diff of two whole texts is slow. The time goes up with
 // the square of how much differs, and with every char a token of its own a lot
 // differs: 75 KB of code with one line in twenty edited took 2 s by chars.
@@ -20,17 +38,51 @@ importScripts('diff.js');
 // not want.
 
 // Runs `fine` on every removed stretch of a diff that has an added one next to
-// it, and puts what comes out in their place.
-function diffInside(coarse, fine) {
+// it, and puts what comes out in their place. gen and step are for the log.
+function diffInside(coarse, fine, gen, step) {
 	var diff = [];
+	var started = performance.now();
+	if (LOG) {
+		// What is about to be compared: how many pairs, and how big
+		var pairs = 0, total = 0, most = 0, mostText = '';
+		for (var k = 0; k + 1 < coarse.length; k++) {
+			if ((coarse[k].removed && coarse[k + 1].added) || (coarse[k].added && coarse[k + 1].removed)) {
+				var size = coarse[k].value.length + coarse[k + 1].value.length;
+				pairs++;
+				total += size;
+				if (size > most) {
+					most = size;
+					mostText = coarse[k].value.length + ' against ' + coarse[k + 1].value.length;
+				}
+				k++;
+			}
+		}
+		log(gen, step + ': ' + pairs + ' changed pairs to go through, ' + total + ' chars in all' +
+			(pairs ? ', the biggest ' + mostText + ' chars' : ''));
+	}
+
+	// One pair, timed. A big one is announced first, as it may be the one
+	// that never finishes; a slow one is reported after.
+	function pair(removed, added) {
+		var size = removed.length + added.length;
+		var t = performance.now();
+		if (size > 20000) log(gen, step + ': starting on a pair of ' + removed.length + ' against ' + added.length + ' chars');
+		var parts = fine(removed, added);
+		if (performance.now() - t > 100) {
+			log(gen, step + ': a pair of ' + removed.length + ' against ' + added.length + ' chars took ' + ms(t) +
+				' and came out in ' + parts.length + ' parts');
+		}
+		return parts;
+	}
+
 	for (var i = 0; i < coarse.length; i++) {
 		var cur = coarse[i], next = coarse[i + 1];
 		var parts = [cur];
 		if (next && cur.removed && next.added) {
-			parts = fine(cur.value, next.value);
+			parts = pair(cur.value, next.value);
 			i++;
 		} else if (next && cur.added && next.removed) {
-			parts = fine(next.value, cur.value);
+			parts = pair(next.value, cur.value);
 			i++;
 		}
 		for (var j = 0; j < parts.length; j++) {
@@ -44,12 +96,16 @@ function diffInside(coarse, fine) {
 			}
 		}
 	}
+	log(gen, step + ': done in ' + ms(started) + ', ' + diff.length + ' parts');
 	return diff;
 }
 
 self.onmessage = function(e) {
 	var data = e.data;
 	var diff;
+	var gen = data.gen;
+	var started = performance.now(), t;
+	log(gen, data.diffType + ' of ' + data.textA.length + ' against ' + data.textB.length + ' chars');
 
 	if (data.diffType === 'diffPatch') {
 		var pastHunkHeader = false;
@@ -69,13 +125,17 @@ self.onmessage = function(e) {
 				}
 				return r;
 			});
+		log(gen, 'patch: done in ' + ms(started) + ', ' + diff.length + ' lines');
 	} else {
+		t = performance.now();
 		diff = Diff.diffLines(data.textA, data.textB);
+		log(gen, 'lines: done in ' + ms(t) + ', ' + diff.length + ' parts');
 		if (data.diffType === 'diffWords') {
-			diff = diffInside(diff, Diff.diffWords);
+			diff = diffInside(diff, Diff.diffWords, gen, 'words');
 		} else if (data.diffType === 'diffChars') {
 			// diffWordsWithSpace, as diffWords does not keep whitespace as it was
-			diff = diffInside(diffInside(diff, Diff.diffWordsWithSpace), Diff.diffChars);
+			diff = diffInside(diff, Diff.diffWordsWithSpace, gen, 'words');
+			diff = diffInside(diff, Diff.diffChars, gen, 'chars');
 		}
 	}
 
@@ -88,5 +148,6 @@ self.onmessage = function(e) {
 		}
 	}
 
+	log(gen, 'worker done in ' + ms(started) + ', sending ' + diff.length + ' parts to the page');
 	self.postMessage({gen: data.gen, diff: diff});
 };
