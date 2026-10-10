@@ -94,21 +94,67 @@ function saveToStorage() {
 	} catch(e) {}
 }
 
-var diffWorker = new Worker('diff-worker.js');
+// A worker cannot be interrupted, only thrown away. So whenever one is still
+// busy on a diff that nobody is waiting for any more it is terminated and
+// replaced, and the diff that is wanted never has to wait in line behind it.
+function newDiffWorker() {
+	var worker = new Worker('diff-worker.js');
+	worker.onmessage = onDiffMessage;
+	return worker;
+}
+
+var diffWorker = newDiffWorker();
+var diffBusy = false;
 var diffGen = 0;
 var changeTimer = null;
 
-function changed() {
+var resultCell = resultScroller.parentNode;
+var busyTimer = null;
+
+// Fade the result and put a spinner on it while it is out of date.
+function setBusy(on, delay) {
+	clearTimeout(busyTimer);
+	if (!on) {
+		resultCell.classList.remove('busy');
+	} else {
+		busyTimer = setTimeout(function() { resultCell.classList.add('busy'); }, delay);
+	}
+}
+
+// wait: how long the text has to be left alone before the diff is started.
+function requestDiff(wait) {
 	diffGen++;
+	// The text no longer matches the diff on screen, so neither do the marks
+	lastDiff = null;
+	queueMarks();
+	// While typing, only show it when the diff is taking its time - most are
+	// back before anyone could notice. Switching diff type shows it at once:
+	// the fade is soft enough not to flicker on a quick one, and the click
+	// gets an answer when it is not.
+	setBusy(true, wait ? wait + 150 : 0);
+	// Whatever is still being worked out is for a text or a diff type that is
+	// no longer on screen. Stop it now, not when the next diff starts, so it
+	// is out of the way and the new worker is up by the time it is needed.
+	if (diffBusy) {
+		diffWorker.terminate();
+		diffWorker = newDiffWorker();
+		diffBusy = false;
+	}
+	stopRefine();
 	clearTimeout(changeTimer);
 	changeTimer = setTimeout(function() {
+		diffBusy = true;
 		diffWorker.postMessage({
 			gen: diffGen,
 			diffType: window.diffType,
 			textA: a.textContent,
 			textB: b.textContent
 		});
-	}, 100);
+	}, wait);
+}
+
+function changed() {
+	requestDiff(100);
 }
 
 var diffNodes = [];
@@ -143,13 +189,18 @@ function renderDiff(diff) {
 	resultScroller.scrollTop = prevScrollTop;
 	resultScroller.scrollLeft = prevScrollLeft;
 	renderMinimap(diff);
+	lastDiff = diff;
+	laneMap = undefined;
+	// A new layout: what was lined up before no longer is, line up again
+	scrollAnchor = null;
+	queueMarks(true);
 }
 
 // Round 2: highlight the exact chars that changed inside each del/ins.
 // Runs in its own worker so the primary diff is never blocked by it. If a
-// newer coarse diff arrives while it is still busy we terminate it and start a
-// fresh one - cheapest possible preemption. Only the paint changes, never the
-// text, so scroll position and the minimap are untouched.
+// newer coarse diff is asked for while it is still busy we terminate it and
+// start a fresh one - cheapest possible preemption. Only the paint changes,
+// never the text, so scroll position and the minimap are untouched.
 var refineWorker = null;
 var refineBusy = false;
 
@@ -178,13 +229,20 @@ function onRefineMessage(e) {
 		node.textContent = '';
 		node.appendChild(frag);
 	}
+	// The text nodes any marks pointed at have just been replaced
+	queueMarks();
 }
 
-function startRefine(gen, diff) {
+function stopRefine() {
 	if (refineWorker && refineBusy) {
 		refineWorker.terminate();
 		refineWorker = null;
+		refineBusy = false;
 	}
+}
+
+function startRefine(gen, diff) {
+	stopRefine();
 	if (window.diffType === 'diffChars') return; // already as fine as it gets
 	if (!refineWorker) {
 		refineWorker = new Worker('refine-worker.js');
@@ -193,6 +251,291 @@ function startRefine(gen, diff) {
 	refineBusy = true;
 	refineWorker.postMessage({gen: gen, diff: diff, diffType: window.diffType});
 }
+
+// Marking: select text in any of the three lanes and the same text gets marked
+// in the other two. The diff already knows which piece of A is which piece of B
+// and where both sit in the result, so this is a lookup and not a text search -
+// selecting one "the" marks that "the", not every "the" on the page.
+//
+// Painted with the CSS Custom Highlight API: ranges are registered from script
+// and styled with ::highlight(mark). Nothing is inserted into the DOM, which is
+// the only way to do this inside the editable lanes without disturbing the
+// caret and the undo stack. Browsers without it simply get no marks.
+var lanes = {a: a, r: result, b: b};
+var LANES = ['a', 'r', 'b'];  // left to right, the same order as scrollPanels
+var markHL = window.Highlight && window.StaticRange && window.CSS && CSS.highlights ? new Highlight() : null;
+if (markHL) CSS.highlights.set('mark', markHL);
+
+var lastDiff = null;  // the diff on screen, null while a newer one is on its way
+var laneMap;          // built from lastDiff the first time something is selected, null if it did not check out
+var marksQueued = false, alignQueued = false;
+
+// Offsets where each line starts, plus the end of the text.
+function lineStarts(text) {
+	var out = [0];
+	for (var i = text.indexOf('\n'); i !== -1; i = text.indexOf('\n', i + 1)) out.push(i + 1);
+	if (out[out.length - 1] !== text.length) out.push(text.length);
+	return out;
+}
+
+// Length of line k, given that it starts at pos and reads as body (the
+// newline is optional, the last line may not have one). -1 if it does not.
+function lineAt(text, starts, k, pos, body) {
+	if (starts[k] !== pos || !text.startsWith(body, pos)) return -1;
+	var len = starts[k + 1] - pos;
+	return len === body.length || len === body.length + 1 ? len : -1;
+}
+
+function skipSpace(text, pos) {
+	while (pos < text.length && /\s/.test(text[pos])) pos++;
+	return pos;
+}
+
+// The map between the lanes: a list of segments, each a stretch of text with
+// its [start, end) char offsets in a, b and r (the result). A lane the segment
+// does not exist in gets an empty [pos, pos), which keeps every lane's offsets
+// sorted so they can be bisected. n is not a lane: it holds the offsets of each
+// diff node in the result, to get from an offset to its node and back.
+//
+// Every piece is checked against the real text while building, and the whole
+// map is dropped (null) if anything is off. So a mark is either on exactly the
+// right chars or not there at all.
+function buildLaneMap(diff, textA, textB, isPatch) {
+	var m = {a: [], b: [], r: [], n: []};
+	var pa = 0, pb = 0, pr = 0;
+	var linesA, linesB, ia = 0, ib = 0, inHunk = false;
+	if (isPatch) {
+		linesA = lineStarts(textA);
+		linesB = lineStarts(textB);
+	}
+
+	function seg(lenA, lenB, r0, r1) {
+		m.a.push(pa, pa + lenA);
+		m.b.push(pb, pb + lenB);
+		m.r.push(r0, r1);
+		pa += lenA;
+		pb += lenB;
+	}
+
+	for (var i = 0; i < diff.length; i++) {
+		var d = diff[i], v = d.value, end = pr + v.length;
+		var inA = !d.added, inB = !d.removed;
+		var lenA = 0, lenB = 0;
+		m.n.push(pr, end);
+
+		if (isPatch) {
+			if (d.chunkHeader) {
+				var h = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(v);
+				if (!h) return null;
+				// 1-based first line of the hunk, or the line before it when
+				// the hunk has no lines on that side
+				ia = h[2] === '0' ? +h[1] : h[1] - 1;
+				ib = h[4] === '0' ? +h[3] : h[3] - 1;
+				// The unchanged lines a patch leaves out between hunks: they
+				// are in A and in B, just not in the result
+				if (!(linesA[ia] >= pa) || !(linesB[ib] >= pb)) return null;
+				var gap = textA.slice(pa, linesA[ia]);
+				if (gap !== textB.slice(pb, linesB[ib])) return null;
+				seg(gap.length, gap.length, pr, pr);
+				inHunk = true;
+			} else if (inHunk && (d.added || d.removed || v[0] === ' ')) {
+				// A line of text: skip the +/-/space in front of it
+				var body = v.slice(1, -1);
+				if (inA && (lenA = lineAt(textA, linesA, ia++, pa, body)) < 0) return null;
+				if (inB && (lenB = lineAt(textB, linesB, ib++, pb, body)) < 0) return null;
+				seg(lenA, lenB, pr + 1, end);
+			}
+			// Anything else (file header, "\ No newline at end of file") is
+			// only in the patch
+		} else if ((!inA || textA.startsWith(v, pa)) && (!inB || textB.startsWith(v, pb))) {
+			seg(inA ? v.length : 0, inB ? v.length : 0, pr, end);
+		} else {
+			// Words mode ignores whitespace when comparing, so "unchanged"
+			// text can have different spacing in A, B and the result ("a (b)"
+			// and "a(b)" are the same to it). Cut it into stretches that do
+			// read the same everywhere: all other chars have to match
+			// exactly, only runs of whitespace may differ or be missing.
+			for (var k = 0, n; k < v.length; k += n) {
+				n = 0;
+				if (/\s/.test(v[k])) {
+					while (k + n < v.length && /\s/.test(v[k + n])) n++;
+					lenA = inA ? skipSpace(textA, pa) - pa : 0;
+					lenB = inB ? skipSpace(textB, pb) - pb : 0;
+				} else {
+					if (inA) pa = skipSpace(textA, pa);
+					if (inB) pb = skipSpace(textB, pb);
+					while (k + n < v.length && (!inA || textA[pa + n] === v[k + n]) && (!inB || textB[pb + n] === v[k + n])) n++;
+					if (!n) return null;
+					lenA = inA ? n : 0;
+					lenB = inB ? n : 0;
+				}
+				seg(lenA, lenB, pr + k, pr + k + n);
+			}
+		}
+		pr = end;
+	}
+
+	if (isPatch) {
+		// Unchanged lines after the last hunk
+		var tail = textA.slice(pa);
+		if (tail !== textB.slice(pb)) return null;
+		seg(tail.length, tail.length, pr, pr);
+	} else if (skipSpace(textA, pa) !== textA.length || skipSpace(textB, pb) !== textB.length) {
+		return null;
+	}
+	m.n.push(pr, pr);
+	return m;
+}
+
+// Index of the first [start, end) pair that ends after pos.
+function firstPairAfter(pairs, pos) {
+	var lo = 0, hi = pairs.length / 2;
+	while (lo < hi) {
+		var mid = (lo + hi) >> 1;
+		if (pairs[2 * mid + 1] > pos) hi = mid; else lo = mid + 1;
+	}
+	return lo;
+}
+
+// Where is [s, e) of lane `from` in the other two lanes? Returns flat
+// start, end, start, end, ... lists per lane, sorted, touching stretches merged.
+// at[lane] is the other way round for the first of them: the offset in `from`
+// of the text that the first stretch in that lane starts with. Not always s -
+// a selection that starts in removed text has nothing in B until further in.
+function mapSelection(m, from, s, e) {
+	var out = {a: [], r: [], b: [], at: {}};
+	var src = m[from];
+	for (var i = firstPairAfter(src, s); 2 * i < src.length && src[2 * i] < e; i++) {
+		var srcLen = src[2 * i + 1] - src[2 * i];
+		var lo = Math.max(s, src[2 * i]) - src[2 * i];
+		var hi = Math.min(e, src[2 * i + 1]) - src[2 * i];
+		if (hi <= lo) continue;
+		for (var j = 0; j < LANES.length; j++) {
+			var lane = LANES[j];
+			if (lane === from) continue;
+			// Same position within the segment. Only whitespace and a missing
+			// last newline can make a segment differ in length between lanes;
+			// selecting to its end here then means to its end there, so a tab
+			// marks all four spaces it was replaced with.
+			var t0 = m[lane][2 * i], len = m[lane][2 * i + 1] - t0;
+			var x = t0 + Math.min(lo, len), y = t0 + (hi === srcLen ? len : Math.min(hi, len));
+			if (y <= x) continue;
+			var list = out[lane];
+			if (!list.length) out.at[lane] = src[2 * i] + lo;
+			if (list.length && list[list.length - 1] === x) list[list.length - 1] = y;
+			else list.push(x, y);
+		}
+	}
+	return out;
+}
+
+// A selection boundary as a char offset into the lane's text.
+function laneOffset(lane, node, offset) {
+	var root = lanes[lane], base = 0;
+	if (lane === 'r') {
+		// Count from the diff node rather than from the top of the result
+		if (node === result) return laneMap.n[2 * offset];
+		root = node;
+		while (root.parentNode !== result) root = root.parentNode;
+		base = laneMap.n[2 * diffNodes.indexOf(root)];
+	}
+	var range = document.createRange();
+	range.setStart(root, 0);
+	range.setEnd(node, offset);
+	return base + range.toString().length;
+}
+
+// Calls fn(startNode, startOffset, endNode, endOffset) for each of the given
+// char offsets (start, end, start, end, ...) into the lane's text, in one walk
+// over its text nodes.
+function eachRange(lane, spans, fn) {
+	var walker = document.createTreeWalker(lanes[lane], NodeFilter.SHOW_TEXT);
+	var pos = 0;
+	if (lane === 'r') {
+		// Start at the diff node of the first one, not at the top of the result
+		var first = firstPairAfter(laneMap.n, spans[0]);
+		walker.currentNode = diffNodes[first];
+		pos = laneMap.n[2 * first];
+	}
+	var k = 0, startNode = null, startOffset = 0;
+	for (var node = walker.nextNode(); node && k < spans.length; node = walker.nextNode()) {
+		var end = pos + node.length;
+		while (k < spans.length) {
+			if (k & 1) {
+				if (spans[k] > end) break;
+				fn(startNode, startOffset, node, spans[k] - pos);
+			} else {
+				if (spans[k] >= end) break;
+				startNode = node;
+				startOffset = spans[k] - pos;
+			}
+			k++;
+		}
+		pos = end;
+	}
+}
+
+// StaticRange and not Range: the browser has to keep every live Range up to
+// date on each DOM change, and round 2 changes a lot of DOM.
+function addMark(startNode, startOffset, endNode, endOffset) {
+	markHL.add(new StaticRange({
+		startContainer: startNode, startOffset: startOffset,
+		endContainer: endNode, endOffset: endOffset
+	}));
+}
+
+// How far down the screen the char at offset pos of the lane's text is, or
+// null if it has no box to measure.
+function topOf(lane, pos) {
+	var top = null;
+	eachRange(lane, [pos, pos + 1], function(startNode, startOffset, endNode, endOffset) {
+		var range = document.createRange();
+		range.setStart(startNode, startOffset);
+		range.setEnd(endNode, endOffset);
+		var rects = range.getClientRects();
+		if (rects.length) top = rects[0].top;
+	});
+	return top;
+}
+
+function updateMarks() {
+	var align = alignQueued;
+	marksQueued = alignQueued = false;
+	markHL.clear();
+	if (!lastDiff) return;
+	var sel = window.getSelection();
+	if (!sel || !sel.rangeCount || sel.isCollapsed) return;
+	// The lane the selection was started in. It can run out of that lane (a
+	// triple click in the result ends in the next lane), so anything outside
+	// is cut off.
+	var from = a.contains(sel.anchorNode) ? 'a' : b.contains(sel.anchorNode) ? 'b' : result.contains(sel.anchorNode) ? 'r' : null;
+	if (!from) return;
+	if (laneMap === undefined) {
+		laneMap = buildLaneMap(lastDiff, a.textContent, b.textContent, window.diffType === 'diffPatch');
+	}
+	if (!laneMap) return;
+	var range = sel.getRangeAt(0);
+	var root = lanes[from];
+	var s = root.contains(range.startContainer) ? laneOffset(from, range.startContainer, range.startOffset) : 0;
+	var e = root.contains(range.endContainer) ? laneOffset(from, range.endContainer, range.endOffset) : Infinity;
+	var spans = mapSelection(laneMap, from, s, e);
+	for (var j = 0; j < LANES.length; j++) {
+		if (spans[LANES[j]].length) eachRange(LANES[j], spans[LANES[j]], addMark);
+	}
+	if (align) alignMarks(from, spans);
+}
+
+// align: also line the lanes up on the marks (see alignMarks). For when the
+// selection or the layout is new, not for a repaint of the marks.
+function queueMarks(align) {
+	if (!markHL) return;
+	if (align) alignQueued = true;
+	if (marksQueued) return;
+	marksQueued = true;
+	requestAnimationFrame(updateMarks);
+}
+
+document.addEventListener('selectionchange', function() { queueMarks(true); });
 
 function alignMinimap() {
 	var offset = 15;
@@ -280,27 +623,52 @@ minimap.addEventListener('click', function(e) {
 	syncScroll(resultScroller);
 });
 
-function forwardWheel(e) {
-	if (e.target.closest('#a, #b, td > div:not(#minimap)')) return;
-	resultScroller.scrollTop += e.deltaY;
-	resultScroller.scrollLeft += e.deltaX;
-	syncScroll(resultScroller);
+// Wheel scrolling is done here and not left to the browser. Left alone, the
+// lane under the pointer scrolls at once and the other two only hear of it in
+// a scroll event a frame later - and lanes that are meant to move as one then
+// wobble against each other all the way. Moving all three in the same step
+// puts them on screen together. Outside the lanes the wheel scrolls the result.
+function onWheel(e) {
+	if (e.ctrlKey) return; // pinch to zoom
+	var lane = e.target.closest && e.target.closest('#a, #b, td > div:not(#minimap)');
+	// With the lanes on their own the browser can do it, there is nothing to keep together
+	if (lane && !scrollLockEnabled) return;
+	var panel = lane || resultScroller;
+	var dx = e.deltaX, dy = e.deltaY;
+	if (e.shiftKey && !dx) { dx = dy; dy = 0; }
+	if (e.deltaMode) {
+		// A mouse wheel that counts in lines (18px each here) or in pages
+		var unit = e.deltaMode === 1 ? 18 : panel.clientHeight;
+		dx *= unit;
+		dy *= unit;
+	}
+	// One direction at a time, as the browser does it: no finger moves dead
+	// straight, and the text should not drift sideways on the way down
+	if (lineBreakEnabled || Math.abs(dy) >= Math.abs(dx)) dx = 0; else dy = 0;
+	panel.scrollTop += dy;
+	panel.scrollLeft += dx;
+	syncScroll(panel);
+	scrollPut[[].indexOf.call(scrollPanels, panel)] = [panel.scrollTop, panel.scrollLeft];
 	e.preventDefault();
 }
-window.addEventListener('wheel', forwardWheel, {passive: false});
+window.addEventListener('wheel', onWheel, {passive: false});
 
 var resizeTimer = null;
 window.addEventListener('resize', function() {
 	clearTimeout(resizeTimer);
 	resizeTimer = setTimeout(renderMinimap, 100);
+	scrollAnchor = null;
 });
 
-diffWorker.onmessage = function(e) {
+function onDiffMessage(e) {
+	if (e.target !== diffWorker) return; // a last word from one already replaced
+	diffBusy = false;
 	if (e.data.gen !== diffGen) return;
 	result.className = '';
 	renderDiff(e.data.diff);
+	setBusy(false);
 	startRefine(e.data.gen, e.data.diff);
-};
+}
 
 window.onload = function() {
 	loadFromStorage();
@@ -445,7 +813,7 @@ var radio = document.getElementsByName('diff_type');
 for (var i = 0; i < radio.length; i++) {
 	radio[i].onchange = function(e) {
 		onDiffTypeChange(e.target);
-		changed();
+		requestDiff(0);
 		saveToStorage();
 	}
 }
@@ -494,7 +862,26 @@ document.getElementById('about').onclick = function() {
 var scrollLockEnabled = true;
 var scrollLockBtn = document.getElementById('scroll-lock');
 var scrollPanels = document.querySelectorAll('td > div:not(#minimap)');
-var scrollSource = null;
+// Where each panel was last put by us, as [top, left]. Moving a panel makes it
+// fire a scroll event like any other, and without this there is no telling it
+// from the user scrolling: the lane that was moved would turn round and move
+// the others, the one being scrolled included, back to where it was a frame
+// ago.
+var scrollPut = [];
+
+function putScroll(j, top, left) {
+	var panel = scrollPanels[j];
+	panel.scrollTop = top;
+	panel.scrollLeft = left;
+	// Read back: the browser rounds and clamps
+	scrollPut[j] = [panel.scrollTop, panel.scrollLeft];
+}
+
+function onPanelScroll(j) {
+	var panel = scrollPanels[j], put = scrollPut[j];
+	if (put && Math.abs(panel.scrollTop - put[0]) < 0.5 && Math.abs(panel.scrollLeft - put[1]) < 0.5) return;
+	syncScroll(panel);
+}
 
 scrollLockBtn.onclick = function() {
 	scrollLockEnabled = !scrollLockEnabled;
@@ -518,38 +905,93 @@ lineBreakToggle.onclick = function() {
 	for (var j = 0; j < scrollPanels.length; j++) {
 		scrollPanels[j].style.overflowX = lineBreakEnabled ? 'hidden' : 'auto';
 	}
+	scrollAnchor = null;
 	renderMinimap();
 	saveToStorage();
 };
 
+// Scroll sync is proportional: top meets top, bottom meets bottom and in
+// between each lane moves at the speed its own height calls for. That cannot
+// keep any one piece of text level across lanes, as the result is longer than
+// A and B by everything that was added or removed.
+//
+// Marking text lines the lanes up on the marks (alignMarks), and scrollAnchor
+// remembers where each panel was when it did. From there the lanes move
+// together 1:1, so what was lined up stays lined up, for up to a screen either
+// way - about as long as the marks can be seen. Past that each lane spreads
+// what it has left over what the others have left, so top still meets top and
+// bottom still meets bottom. One curve through the anchor, the same whichever
+// lane is being scrolled, so nothing jumps when another lane takes over.
+var scrollAnchor = null;
+
 function syncScroll(source) {
 	if (!scrollLockEnabled) return;
-	if (scrollSource && scrollSource !== source) return;
-	scrollSource = source;
 
-	var maxScroll = source.scrollHeight - source.clientHeight;
-	var pct = maxScroll > 0 ? source.scrollTop / maxScroll : 0;
+	var anchor = scrollAnchor;
+	var max = [], s = 0, j;
+	var up = scrollPanels[0].clientHeight, down = up;
+	for (j = 0; j < scrollPanels.length; j++) {
+		max[j] = scrollPanels[j].scrollHeight - scrollPanels[j].clientHeight;
+		if (scrollPanels[j] === source) s = j;
+		// An anchor further down than the lane now goes is from another text
+		if (anchor && anchor[j] > max[j] + 1) anchor = scrollAnchor = null;
+		if (anchor) {
+			up = Math.min(up, anchor[j]);
+			down = Math.min(down, Math.max(0, max[j] - anchor[j]));
+		}
+	}
+	// Clamped, as a bouncing scroll goes past both ends
+	var top = Math.max(0, Math.min(max[s], source.scrollTop));
 	var maxScrollLeft = source.scrollWidth - source.clientWidth;
 	var pctLeft = maxScrollLeft > 0 ? source.scrollLeft / maxScrollLeft : 0;
 
-	for (var j = 0; j < scrollPanels.length; j++) {
+	for (j = 0; j < scrollPanels.length; j++) {
 		if (scrollPanels[j] !== source) {
-			var targetMax = scrollPanels[j].scrollHeight - scrollPanels[j].clientHeight;
-			scrollPanels[j].scrollTop = pct * targetMax;
+			var target;
+			if (!anchor) {
+				target = max[s] > 0 ? top / max[s] * max[j] : 0;
+			} else if (top < anchor[s] - up) {
+				target = top / (anchor[s] - up) * (anchor[j] - up);
+			} else if (top <= anchor[s] + down) {
+				target = anchor[j] + top - anchor[s];
+			} else {
+				target = anchor[j] + down + (top - anchor[s] - down) / (max[s] - anchor[s] - down) * (max[j] - anchor[j] - down);
+			}
 			var targetMaxLeft = scrollPanels[j].scrollWidth - scrollPanels[j].clientWidth;
-			scrollPanels[j].scrollLeft = pctLeft * targetMaxLeft;
+			putScroll(j, target, pctLeft * targetMaxLeft);
 		}
 	}
+}
 
-	requestAnimationFrame(function() {
-		scrollSource = null;
-	});
+// Scroll the other lanes so that their first mark is at the same height as the
+// text it belongs to in the lane being marked in. That lane never moves: the
+// text under the pointer stays where it is. A lane that is already at its top
+// or bottom goes as far as it can.
+function alignMarks(from, spans) {
+	if (!scrollLockEnabled) return;
+	var view = scrollPanels[LANES.indexOf(from)].getBoundingClientRect();
+	var aligned = false;
+	for (var j = 0; j < LANES.length; j++) {
+		var lane = LANES[j];
+		if (lane === from || !spans[lane].length) continue;
+		// Nothing to line up with once the start of the marked text is out of
+		// view, as after a select all halfway down
+		var here = topOf(from, spans.at[lane]);
+		if (here === null || here < view.top || here > view.bottom) continue;
+		var there = topOf(lane, spans[lane][0]);
+		if (there === null) continue;
+		putScroll(j, scrollPanels[j].scrollTop + there - here, scrollPanels[j].scrollLeft);
+		aligned = true;
+	}
+	if (!aligned) return;
+	scrollAnchor = [];
+	for (j = 0; j < scrollPanels.length; j++) scrollAnchor[j] = scrollPanels[j].scrollTop;
 }
 
 for (var k = 0; k < scrollPanels.length; k++) {
-	(function(panel) {
-		panel.addEventListener('scroll', function() { syncScroll(panel); }, {passive: true});
-	})(scrollPanels[k]);
+	(function(j) {
+		scrollPanels[j].addEventListener('scroll', function() { onPanelScroll(j); }, {passive: true});
+	})(k);
 }
 </script>
 </body>

@@ -58,6 +58,10 @@ ins {
 del .chg { background: #FFBDAD; }
 ins .chg { background: #ABF5D1; }
 
+/* Text selected in one lane, marked where it sits in the other two. Background
+   only, so del/ins keep their own text colour underneath. */
+::highlight(mark) { background-color: #FFE380; }
+
 .chunk-header {
 	color: #8a008b;
 	text-decoration: none;
@@ -96,6 +100,38 @@ td.result-cell {
 
 #minimap > span.mm-ins { background: #36B37E; }
 #minimap > span.mm-del { background: #DE350B; }
+
+/* A newer diff is on its way: fade the one on screen and spin on top of it.
+   The spinner waits a moment before it shows, most diffs are back by then. */
+#result {
+	transition: opacity 0.15s;
+}
+.busy #result {
+	opacity: 0.4;
+}
+.busy::after {
+	content: '';
+	position: absolute;
+	top: 40%;
+	left: 50%;
+	width: 16px;
+	height: 16px;
+	margin: -10px 0 0 -10px;
+	border: 2px solid #666;
+	border-top-color: transparent;
+	border-radius: 50%;
+	/* A disc of page colour behind it, so it is not lost in the text */
+	background: #efefef;
+	box-shadow: 0 0 0 7px #efefef;
+	animation: spin 0.7s linear infinite, spin-in 0.2s 0.15s backwards;
+}
+
+@keyframes spin {
+	to { transform: rotate(360deg); }
+}
+@keyframes spin-in {
+	from { opacity: 0; }
+}
 
 #result.loading {
 	color: #999;
