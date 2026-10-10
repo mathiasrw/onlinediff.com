@@ -15,12 +15,17 @@
 // checks in here. Results are posted in batches so large diffs refine
 // progressively from the top.
 //
-// Ideas for later (intentionally not done yet, keep round 2 simple first):
-//  - Similarity threshold: skip pairs where more than ~50-60% of the chars
-//    differ, so a fully rewritten line stays plain instead of confetti.
-//  - Gap merging beyond whitespace: absorb 1-2 char equal runs between two
-//    changes into one changed span (diff-match-patch style "semantic
-//    cleanup"). Whitespace-only gaps are already merged, see mergeSpaceGaps.
+// What the two tones mean: inside a del/ins pair the lighter tone is what the
+// old and the new text have in common, the stronger one is what was changed.
+// That only says something when the two are versions of the same thing. Any
+// two pieces of text share letters - "specialise" and "look at how work moves
+// from idea to release" have s, e, i, a, l in the same order - and painting
+// those as "in common" is noise. So matches that are there by accident are
+// taken out (dropWeakLinks), and a pair left with too little in common is not
+// shaded at all (MIN_KEPT): it stays one plain tint, which reads as "all of
+// this was replaced".
+//
+// Idea for later, not done yet:
 //  - Size cap: skip or chunk pairs above a few thousand chars per line, as
 //    jsdiff's char diff is O(ND) and very dissimilar long lines get slow.
 
@@ -42,25 +47,74 @@ function splitLines(s) {
 	return out;
 }
 
+// A pair has to keep at least this share of its shorter side in common to be
+// shaded. Of the shorter side, so that a line with a lot added to it still
+// counts as the same line. Half is where "dogs" for "cats" (they share the s)
+// and "collaboration" for "enhance document generation" (they share "ration")
+// stop being shaded, while color/colour and process/processes still are.
+var MIN_KEPT = 0.5;
+
+// blocks: unchanged {eq} and changed {del, ins} stretches, taking turns.
+// An unchanged stretch that is no longer than the changes on both sides of it
+// is not holding anything together - one letter that happens to match in the
+// middle of two different words. It is made part of the change around it. The
+// change is bigger after that, so the stretch before it is looked at again.
+// The rule is the "semantic cleanup" of diff-match-patch. A stretch at the very
+// start or end has a change on one side only and is always kept: that is the
+// "organisatio" of organisation -> organisatioxn.
+function dropWeakLinks(blocks) {
+	for (var i = 1; i < blocks.length - 1; i++) {
+		var eq = blocks[i].eq;
+		if (eq === undefined) continue;
+		var before = blocks[i - 1], after = blocks[i + 1];
+		if (eq.length <= Math.max(before.del.length, before.ins.length) &&
+				eq.length <= Math.max(after.del.length, after.ins.length)) {
+			before.del += eq + after.del;
+			before.ins += eq + after.ins;
+			blocks.splice(i, 2);
+			i = Math.max(0, i - 3);
+		}
+	}
+}
+
 // Diff one removed line against one added line, one granularity finer than
 // the primary diff: lines/patch refine per word, words refine per char.
 // diffWordsWithSpace rather than diffWords: diffWords ignores whitespace-only
 // differences, so its output would not reconstruct the original text exactly.
-// Returns [partsForDel, partsForIns], each a list of [text, changed].
+// Returns [partsForDel, partsForIns], each a list of [text, changed], or null
+// when the two have too little in common to say what changed.
 function diffPair(delText, insText, diffFn) {
 	var d = diffFn(delText, insText);
-	var delParts = [], insParts = [];
-	for (var i = 0; i < d.length; i++) {
+	var blocks = [];
+	var i, last;
+	for (i = 0; i < d.length; i++) {
 		var e = d[i];
-		if (e.removed) {
-			delParts.push([e.value, true]);
-		} else if (e.added) {
-			insParts.push([e.value, true]);
+		last = blocks[blocks.length - 1];
+		if (e.removed || e.added) {
+			if (!last || last.eq !== undefined) blocks.push(last = {del: '', ins: ''});
+			if (e.removed) last.del += e.value; else last.ins += e.value;
+		} else if (last && last.eq !== undefined) {
+			last.eq += e.value;
 		} else {
-			delParts.push([e.value, false]);
-			insParts.push([e.value, false]);
+			blocks.push({eq: e.value});
 		}
 	}
+	dropWeakLinks(blocks);
+
+	var kept = 0;
+	var delParts = [], insParts = [];
+	for (i = 0; i < blocks.length; i++) {
+		var b = blocks[i];
+		if (b.eq !== undefined) {
+			kept += b.eq.length;
+			delParts.push([b.eq, false]);
+			insParts.push([b.eq, false]);
+		} else {
+			if (b.del) delParts.push([b.del, true]);
+			if (b.ins) insParts.push([b.ins, true]);
+		}
+	}
+	if (kept < MIN_KEPT * Math.min(delText.length, insText.length)) return null;
 	return [delParts, insParts];
 }
 
@@ -130,9 +184,9 @@ function refineRun(dels, ins, isPatch, diffFn, byWords, out) {
 		}
 		var r = diffPair(dText, iText, diffFn);
 		if (dPrefix) add(dl.i, [[dPrefix, false]]);
-		add(dl.i, r[0]);
+		add(dl.i, r ? r[0] : [[dText, false]]);
 		if (iPrefix) add(il.i, [[iPrefix, false]]);
-		add(il.i, r[1]);
+		add(il.i, r ? r[1] : [[iText, false]]);
 	}
 	// Unpaired trailing lines stay as they are (whole-change tint only)
 	for (j = n; j < delLines.length; j++) add(delLines[j].i, [[delLines[j].text, false]]);

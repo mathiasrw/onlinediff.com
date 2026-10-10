@@ -32,28 +32,37 @@ is wanted never waits in line behind one that is not.
 
 ### Seeing where the time goes
 
-Both the page and `diff-worker.js` log timings to the console, one line per
-step, all starting with `[diff N]` where N counts the diffs asked for. The
-worker says what it is about to compare before it starts, so a step that never
-comes back can be told from the last line that was printed. `LOG = false` at
-the top of each turns it off.
+Changing the diff type logs the timings of that one diff to the console, from
+both the page and `diff-worker.js`: one line per step, all starting with
+`[diff N]` where N counts the diffs asked for. Diffs from typing are not
+logged. The worker says what it is about to compare before it starts, so a step
+that never comes back can be told from the last line that was printed.
 
-A fresh worker also prints `[diff] worker started (lines > words > chars)`. If
-that line is missing, the browser is running an older `diff-worker.js`.
+The worker's first line ends in `(worker: lines > words > chars)`. If it does
+not, the browser is running an older `diff-worker.js`.
 
 No caching of round 2 results: pairs move around on every keystroke so a cache
 would rarely hit and would just hold memory.
 
-### Ideas for round 2, not done yet
+### What the two tones in round 2 mean
 
-- Similarity threshold: skip pairs where more than ~50–60% of the chars differ,
-  so a fully rewritten line stays plain instead of confetti.
-- Gap merging beyond whitespace: absorb 1–2 char equal runs between two changes
-  into one changed span (diff-match-patch style "semantic cleanup"). Whitespace-
-  only gaps between two changed words are already merged (`mergeSpaceGaps`), so
-  a stretch of changed words paints as one block instead of stripes.
-- Size cap: skip or chunk pairs above a few thousand chars per line; jsdiff's
-  char diff is O(ND) and very dissimilar long lines get slow.
+Inside a removed/added pair the lighter tone is what the old and the new text
+have in common, the stronger tone is what was changed. That only says something
+when the two are versions of the same thing, so:
+
+- Matches that are there by accident are taken out (`dropWeakLinks`, the
+  "semantic cleanup" rule of diff-match-patch): an unchanged stretch no longer
+  than the changes on both sides of it becomes part of the change. Any two
+  texts share letters in the same order; one matching letter between two
+  different words is not something they have in common.
+- A pair that is then left with less than half of its shorter side in common
+  (`MIN_KEPT`) is not shaded at all. One plain tint reads as "all of this was
+  replaced", which is what happened.
+- Whitespace-only gaps between two changed words are merged (`mergeSpaceGaps`),
+  so a stretch of changed words paints as one block instead of stripes.
+
+Not done yet: a size cap. jsdiff's char diff is O(ND), and a pair of very
+different lines of a few thousand chars each gets slow.
 
 ## Marking text
 

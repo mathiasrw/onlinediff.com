@@ -99,13 +99,14 @@ function saveToStorage() {
 // replaced, and the diff that is wanted never has to wait in line behind it.
 // Timings in the console, to see where the time goes when a diff is slow. The
 // worker logs its own steps (see diff-worker.js), this is the page's side of
-// it: waiting, drawing, and what got cancelled. Set to false to keep quiet.
-var LOG = true;
+// it: waiting, drawing, and what got cancelled. Only for a diff that was asked
+// for by changing diff type, so that typing does not fill the console.
+var logGen = 0;         // the diff to log
 var diffPosted = 0;     // when the diff being worked on was handed to the worker
 var diffPostedGen = 0;  // and which one it is
 
 function log(gen, text) {
-	if (LOG) console.log('[diff ' + gen + '] ' + text);
+	if (gen === logGen) console.log('[diff ' + gen + '] ' + text);
 }
 
 function ms(since) {
@@ -164,6 +165,7 @@ function requestDiff(wait) {
 		diffPostedGen = diffGen;
 		diffWorker.postMessage({
 			gen: diffGen,
+			log: diffGen === logGen,
 			diffType: window.diffType,
 			textA: a.textContent,
 			textB: b.textContent
@@ -694,7 +696,7 @@ function onDiffMessage(e) {
 	renderDiff(e.data.diff);
 	setBusy(false);
 	log(diffGen, 'page: handed to the browser ' + ms(diffPosted) + ' after it was sent to the worker');
-	if (LOG) {
+	if (diffGen === logGen) {
 		// The browser still has to paint it, which no script can time from the
 		// inside. The first moment it lets a script run again after a frame is
 		// as close as it gets.
@@ -850,6 +852,7 @@ for (var i = 0; i < radio.length; i++) {
 	radio[i].onchange = function(e) {
 		onDiffTypeChange(e.target);
 		requestDiff(0);
+		logGen = diffGen;
 		saveToStorage();
 	}
 }

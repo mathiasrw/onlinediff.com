@@ -1,22 +1,19 @@
 importScripts('diff.js');
 
-// Timings in the console, to see where the time goes when a diff is slow.
-// Every step says what it is about to do before it does it, so one that never
-// comes back can be told from the last line that did get printed. Set to false
-// to keep the console quiet.
-var LOG = true;
+// Timings in the console, to see where the time goes when a diff is slow. Only
+// for the diffs the page asks to have logged (those from a change of diff
+// type), so that typing does not fill the console. Every step says what it is
+// about to do before it does it, so one that never comes back can be told from
+// the last line that did get printed.
+var logging = false;
 
 function log(gen, text) {
-	if (LOG) console.log('[diff ' + gen + '] ' + text);
+	if (logging) console.log('[diff ' + gen + '] ' + text);
 }
 
 function ms(since) {
 	return Math.round(performance.now() - since) + ' ms';
 }
-
-// A fresh worker says so. No such line in the console means the browser is
-// running an older copy of this file.
-if (LOG) console.log('[diff] worker started (lines > words > chars)');
 
 // A plain char or word diff of two whole texts is slow. The time goes up with
 // the square of how much differs, and with every char a token of its own a lot
@@ -42,7 +39,7 @@ if (LOG) console.log('[diff] worker started (lines > words > chars)');
 function diffInside(coarse, fine, gen, step) {
 	var diff = [];
 	var started = performance.now();
-	if (LOG) {
+	if (logging) {
 		// What is about to be compared: how many pairs, and how big
 		var pairs = 0, total = 0, most = 0, mostText = '';
 		for (var k = 0; k + 1 < coarse.length; k++) {
@@ -105,7 +102,10 @@ self.onmessage = function(e) {
 	var diff;
 	var gen = data.gen;
 	var started = performance.now(), t;
-	log(gen, data.diffType + ' of ' + data.textA.length + ' against ' + data.textB.length + ' chars');
+	logging = !!data.log;
+	// "lines > words > chars" names this version of the worker: a log without
+	// it comes from an older copy of this file that the browser held on to
+	log(gen, data.diffType + ' of ' + data.textA.length + ' against ' + data.textB.length + ' chars (worker: lines > words > chars)');
 
 	if (data.diffType === 'diffPatch') {
 		var pastHunkHeader = false;
