@@ -29,7 +29,8 @@
 //  - Size cap: skip or chunk pairs above a few thousand chars per line, as
 //    jsdiff's char diff is O(ND) and very dissimilar long lines get slow.
 
-importScripts('diff.js');
+// Under the same version as this worker (see index.html)
+importScripts('diff.js' + self.location.search);
 
 var BATCH = 200;
 

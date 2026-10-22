@@ -1,4 +1,5 @@
-importScripts('diff.js');
+// Under the same version as this worker (see index.html)
+importScripts('diff.js' + self.location.search);
 
 // Timings in the console, to see where the time goes when a diff is slow. Only
 // for the diffs the page asks to have logged (those from a change of diff

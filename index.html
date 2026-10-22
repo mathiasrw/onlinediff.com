@@ -41,7 +41,7 @@
 </div>
 
 <a href="#" id="about" class="source" title="About Online Diff" aria-label="About Online Diff">i</a>
-<span id="version">v1.3.2</span>
+<span id="version">v1.3.3</span>
 
 <table>
 	<tr>
@@ -114,8 +114,13 @@ function ms(since) {
 	return Math.round(performance.now() - since) + ' ms';
 }
 
+// The workers are loaded under the version shown in the corner. A browser
+// holds on to a worker script it has seen before, even when the page around it
+// is new, and then runs the old diff on the new page.
+var version = '?' + document.getElementById('version').textContent;
+
 function newDiffWorker() {
-	var worker = new Worker('diff-worker.js');
+	var worker = new Worker('diff-worker.js' + version);
 	worker.onmessage = onDiffMessage;
 	return worker;
 }
@@ -271,7 +276,7 @@ function startRefine(gen, diff) {
 	stopRefine();
 	if (window.diffType === 'diffChars') return; // already as fine as it gets
 	if (!refineWorker) {
-		refineWorker = new Worker('refine-worker.js');
+		refineWorker = new Worker('refine-worker.js' + version);
 		refineWorker.onmessage = onRefineMessage;
 	}
 	refineBusy = true;

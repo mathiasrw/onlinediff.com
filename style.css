@@ -235,10 +235,10 @@ td.result-cell {
 	opacity: 1;
 }
 
-/* Which copy of the site this is, next to the i */
+/* Which copy of the site this is: bottom right, where the i is on the left */
 #version {
 	position: absolute;
-	left: 26px;
+	right: 10px;
 	bottom: 3px;
 	line-height: 11px;
 	color: darkgray;
