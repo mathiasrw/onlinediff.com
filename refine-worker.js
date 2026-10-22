@@ -33,6 +33,10 @@ importScripts('diff.js');
 
 var BATCH = 200;
 
+// Unchanged text that is only blank lines (in a patch: a context line of
+// nothing but its leading space)
+var BLANK = /^[^\S\n]*\n\s*$/;
+
 // Split "a\nb\nc" into ["a\n", "b\n", "c"], keeping the newlines attached.
 function splitLines(s) {
 	var out = [];
@@ -221,8 +225,14 @@ self.onmessage = function(e) {
 	while (i < diff.length) {
 		if (!diff[i].added && !diff[i].removed) { i++; continue; }
 		var dels = [], ins = [];
-		while (i < diff.length && (diff[i].added || diff[i].removed)) {
-			(diff[i].removed ? dels : ins).push({i: i, value: diff[i].value});
+		// A blank line between two changes does not end the run: the line
+		// diff often puts one between what was removed and what was added
+		while (i < diff.length) {
+			if (diff[i].added || diff[i].removed) {
+				(diff[i].removed ? dels : ins).push({i: i, value: diff[i].value});
+			} else if (!BLANK.test(diff[i].value) || !diff[i + 1] || !(diff[i + 1].added || diff[i + 1].removed)) {
+				break;
+			}
 			i++;
 		}
 		if (dels.length && ins.length) {

@@ -34,6 +34,13 @@ function ms(since) {
 // it stops waiting for an answer, so at least nobody waits for one they do
 // not want.
 
+// Unchanged text that is only blank lines. Between two changes it is taken in
+// as part of the change: a line diff happily matches the blank line after a
+// heading in the new text with the one before the next heading in the old, and
+// what was removed and what was added then end up on either side of it and are
+// never compared. The finer diff finds the blank line again where it belongs.
+var BLANK = /^[^\S\n]*\n\s*$/;
+
 // Runs `fine` on every removed stretch of a diff that has an added one next to
 // it, and puts what comes out in their place. gen and step are for the log.
 function diffInside(coarse, fine, gen, step) {
@@ -43,6 +50,7 @@ function diffInside(coarse, fine, gen, step) {
 		// What is about to be compared: how many pairs, and how big
 		var pairs = 0, total = 0, most = 0, mostText = '';
 		for (var k = 0; k + 1 < coarse.length; k++) {
+			// Not counting pairs held apart by a blank line, close enough for a log
 			if ((coarse[k].removed && coarse[k + 1].added) || (coarse[k].added && coarse[k + 1].removed)) {
 				var size = coarse[k].value.length + coarse[k + 1].value.length;
 				pairs++;
@@ -73,14 +81,25 @@ function diffInside(coarse, fine, gen, step) {
 	}
 
 	for (var i = 0; i < coarse.length; i++) {
-		var cur = coarse[i], next = coarse[i + 1];
-		var parts = [cur];
-		if (next && cur.removed && next.added) {
-			parts = pair(cur.value, next.value);
-			i++;
-		} else if (next && cur.added && next.removed) {
-			parts = pair(next.value, cur.value);
-			i++;
+		var parts = [coarse[i]];
+		if (coarse[i].added || coarse[i].removed) {
+			// The whole run of changes, with the blank lines between them
+			var removed = '', added = '', end = i;
+			for (; end < coarse.length; end++) {
+				var c = coarse[end], after = coarse[end + 1];
+				if (c.removed) {
+					removed += c.value;
+				} else if (c.added) {
+					added += c.value;
+				} else if (BLANK.test(c.value) && after && (after.added || after.removed)) {
+					removed += c.value;
+					added += c.value;
+				} else {
+					break;
+				}
+			}
+			parts = removed && added && removed !== added ? pair(removed, added) : coarse.slice(i, end);
+			i = end - 1;
 		}
 		for (var j = 0; j < parts.length; j++) {
 			var part = parts[j], last = diff[diff.length - 1];
