@@ -147,8 +147,9 @@ function mergeSpaceGaps(parts) {
 // Refine one run of adjacent removed/added entries.
 // dels / ins are lists of {i: indexInDiff, value}.
 // For lines mode an entry holds many lines; for words/patch it holds one
-// word-chunk / one line. Either way we split into lines and pair line n with
-// line n. Patch lines carry a leading +/- that must not take part in the diff.
+// word-chunk / one line. Either way we split into lines and pair the nth line
+// with the nth, not counting blank lines. Patch lines carry a leading +/- that
+// must not take part in the diff.
 function refineRun(dels, ins, isPatch, diffFn, byWords, out) {
 	var delLines = [], insLines = [];
 	var j, k, lines;
@@ -160,9 +161,6 @@ function refineRun(dels, ins, isPatch, diffFn, byWords, out) {
 		lines = splitLines(ins[j].value);
 		for (k = 0; k < lines.length; k++) insLines.push({i: ins[j].i, text: lines[k]});
 	}
-
-	var n = Math.min(delLines.length, insLines.length);
-	if (!n) return;
 
 	var parts = {}; // diff index -> list of [text, changed]
 	function add(i, list) {
@@ -178,23 +176,33 @@ function refineRun(dels, ins, isPatch, diffFn, byWords, out) {
 		}
 	}
 
-	for (j = 0; j < n; j++) {
-		var dl = delLines[j], il = insLines[j];
-		var dText = dl.text, iText = il.text;
-		var dPrefix = '', iPrefix = '';
-		if (isPatch) {
-			dPrefix = dText.slice(0, 1); dText = dText.slice(1);
-			iPrefix = iText.slice(0, 1); iText = iText.slice(1);
-		}
-		var r = diffPair(dText, iText, diffFn);
-		if (dPrefix) add(dl.i, [[dPrefix, false]]);
-		add(dl.i, r ? r[0] : [[dText, false]]);
-		if (iPrefix) add(il.i, [[iPrefix, false]]);
-		add(il.i, r ? r[1] : [[iText, false]]);
+	// Blank lines are left out of the pairing: one added at the top of a
+	// stretch ("1. Heading\n\n- What ...") would otherwise pair every line
+	// with the one before its counterpart, and nothing gets shaded
+	function body(line) {
+		line.prefix = isPatch ? line.text.slice(0, 1) : '';
+		line.body = line.text.slice(line.prefix.length);
+		line.parts = [[line.body, false]];
+		return /\S/.test(line.body);
 	}
-	// Unpaired trailing lines stay as they are (whole-change tint only)
-	for (j = n; j < delLines.length; j++) add(delLines[j].i, [[delLines[j].text, false]]);
-	for (j = n; j < insLines.length; j++) add(insLines[j].i, [[insLines[j].text, false]]);
+	var delFull = delLines.filter(body), insFull = insLines.filter(body);
+	var n = Math.min(delFull.length, insFull.length);
+	if (!n) return;
+
+	for (j = 0; j < n; j++) {
+		var r = diffPair(delFull[j].body, insFull[j].body, diffFn);
+		if (r) {
+			delFull[j].parts = r[0];
+			insFull[j].parts = r[1];
+		}
+	}
+	// Lines left without a partner stay as they are (whole-change tint only)
+	[delLines, insLines].forEach(function(side) {
+		side.forEach(function(line) {
+			if (line.prefix) add(line.i, [[line.prefix, false]]);
+			add(line.i, line.parts);
+		});
+	});
 
 	for (var key in parts) {
 		if (parts.hasOwnProperty(key)) {
