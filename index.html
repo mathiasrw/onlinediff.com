@@ -41,7 +41,7 @@
 </div>
 
 <a href="#" id="about" class="source" title="About Online Diff" aria-label="About Online Diff">i</a>
-<span id="version">v1.3.3</span>
+<span id="version">v1.4.0</span>
 
 <table>
 	<tr>
@@ -731,13 +731,16 @@ if ('oninput' in a) {
 // Put only plain text on the clipboard, so pasting into Word etc.
 // does not carry the monospace font from the page's CSS.
 function plainTextClipboard(e) {
+	var line = e.type === 'cut' ? lineCutting : null;
+	lineCutting = null;
 	var sel = window.getSelection();
 	if (!sel || sel.isCollapsed) return;
-	var text = sel.toString();
+	var text = line || sel.toString();
 	if (!text) return;
 	var cd = e.clipboardData;
 	if (!cd) return;
 	cd.setData('text/plain', text);
+	lineCut = line;
 	e.preventDefault();
 	if (e.type === 'cut') document.execCommand('delete');
 }
@@ -785,9 +788,28 @@ function stripInvisible(text) {
 // escaped goes through the same path as a native paste: in this pre-wrap,
 // plaintext-only box the \n stay as text, and it is on the native undo stack.
 function insertPlainText(text) {
-	text = stripInvisible(text).replace(/\r\n?/g, '\n');
-	var html = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+	insertText(stripInvisible(text).replace(/\r\n?/g, '\n'));
+}
+
+function insertText(text) {
+	// WebKit drops a newline the inserted text ends in. Replacing the text up to
+	// the next char that is not a newline as well keeps it off the end.
+	var pane = null, at = null, tail = '';
+	if (text[text.length - 1] === '\n') {
+		pane = panes[0].contains(document.activeElement) ? panes[0] : panes[1];
+		at = paneSelection(pane);
+	}
+	if (at) {
+		var rest = pane.textContent, k = at[1];
+		while (rest[k] === '\n') k++;
+		if (k < rest.length) {
+			tail = rest.slice(at[1], k + 1);
+			selectText(pane, at[0], k + 1);
+		}
+	}
+	var html = (text + tail).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 	document.execCommand('insertHTML', false, html);
+	if (tail) selectText(pane, at[0] + text.length);
 }
 
 // Paste and drop are the only ways this text can arrive from elsewhere,
@@ -798,8 +820,119 @@ function cleanPaste(e) {
 	var text = cd.getData('text/plain');
 	if (!text) return;
 	e.preventDefault();
-	insertPlainText(text);
+	// A whole line that was cut goes in above the line the caret is on, as in
+	// VS Code, instead of splitting it. Some clipboards drop its newline.
+	var at = lineCut && (text === lineCut || text + '\n' === lineCut) && window.getSelection().isCollapsed ? paneSelection(e.currentTarget) : null;
+	if (at) {
+		text = lineCut;
+		var pane = e.currentTarget;
+		selectText(pane, pane.textContent.lastIndexOf('\n', at[0] - 1) + 1);
+		insertPlainText(text);
+		selectText(pane, at[0] + text.length);
+	} else {
+		insertPlainText(text);
+	}
 	changed();
+}
+
+// The selection in pane as [start, end] char offsets into its text, or null
+// if it is not in there.
+function paneSelection(pane) {
+	var sel = window.getSelection();
+	if (!sel || !sel.rangeCount) return null;
+	var range = sel.getRangeAt(0);
+	if (!pane.contains(range.startContainer) || !pane.contains(range.endContainer)) return null;
+	return [laneOffset(pane.id, range.startContainer, range.startOffset), laneOffset(pane.id, range.endContainer, range.endOffset)];
+}
+
+// The text node and offset in it for char offset pos into the pane's text.
+function textPoint(pane, pos) {
+	var walker = document.createTreeWalker(pane, NodeFilter.SHOW_TEXT), last = null;
+	for (var node = walker.nextNode(); node; node = walker.nextNode()) {
+		if (pos <= node.length) return [node, pos];
+		pos -= node.length;
+		last = node;
+	}
+	return last ? [last, last.length] : [pane, 0];
+}
+
+function selectText(pane, start, end) {
+	var s = textPoint(pane, start), e = end === undefined ? s : textPoint(pane, end);
+	window.getSelection().setBaseAndExtent(s[0], s[1], e[0], e[1]);
+}
+
+// Line editing as in VS Code: Alt+Up/Down (Option on a Mac) moves the lines
+// the selection is on, and cut with nothing selected cuts the whole line.
+// Both go through the browser's own editing, so undo takes them back.
+var isMac = /Mac|iPhone|iPad/.test(navigator.platform);
+var lineCutting = null;  // the line the cut under way is for, set just before it
+var lineCut = null;      // the last line cut, to know it again when it is pasted
+
+function onPaneKeyDown(e) {
+	var pane = e.currentTarget;
+	if (e.altKey && !e.shiftKey && !e.metaKey && !e.ctrlKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+		e.preventDefault();
+		moveLines(pane, e.key === 'ArrowUp' ? -1 : 1);
+	} else if ((e.key === 'x' || e.key === 'X') && (isMac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey) && !e.altKey && !e.shiftKey) {
+		// Select the line and let the cut go ahead
+		if (!window.getSelection().isCollapsed) return;
+		var at = paneSelection(pane);
+		if (!at) return;
+		var text = pane.textContent;
+		var from = text.lastIndexOf('\n', at[0] - 1) + 1;
+		var to = text.indexOf('\n', at[0]);
+		if (to !== -1) {
+			selectText(pane, from, to + 1);
+		} else if (from > 0) {
+			// The last line has no newline of its own, take the one before
+			to = text.length;
+			selectText(pane, from - 1, to);
+		} else if (text) {
+			to = text.length;
+			selectText(pane, from, to);
+		} else {
+			return;
+		}
+		lineCutting = text.slice(from, to) + '\n';
+		// The cut runs straight after this, should it not, forget about it
+		setTimeout(function() { lineCutting = null; }, 0);
+	}
+}
+
+function moveLines(pane, dir) {
+	var at = paneSelection(pane);
+	if (!at) return;
+	var text = pane.textContent;
+	// A selection that ends at the very start of a line does not take that line along
+	var end = at[1] > at[0] && text[at[1] - 1] === '\n' ? at[1] - 1 : at[1];
+	var from = text.lastIndexOf('\n', at[0] - 1) + 1;
+	var to = text.indexOf('\n', end);
+	if (to === -1) to = text.length;
+	var lines = text.slice(from, to);
+	var start, stop, moved, shift;
+	if (dir < 0) {
+		if (from === 0) return;
+		start = text.lastIndexOf('\n', from - 2) + 1;
+		stop = to;
+		var above = text.slice(start, from - 1);
+		moved = lines + '\n' + above;
+		shift = -(above.length + 1);
+	} else {
+		if (to === text.length) return;
+		start = from;
+		stop = text.indexOf('\n', to + 1);
+		if (stop === -1) stop = text.length;
+		var below = text.slice(to + 1, stop);
+		moved = below + '\n' + lines;
+		shift = below.length + 1;
+	}
+	// Two lines the same: nothing to change, only the caret moves
+	if (moved !== text.slice(start, stop)) {
+		selectText(pane, start, stop);
+		insertText(moved);
+		changed();
+	}
+	selectText(pane, at[0] + shift, at[1] + shift);
 }
 
 function caretRangeAt(x, y) {
@@ -842,6 +975,7 @@ for (var p = 0; p < panes.length; p++) {
 	panes[p].addEventListener('dragstart', plainTextDrag);
 	panes[p].addEventListener('paste', cleanPaste);
 	panes[p].addEventListener('drop', cleanDrop);
+	panes[p].addEventListener('keydown', onPaneKeyDown);
 }
 
 window.onbeforeunload = function() {
