@@ -38,6 +38,7 @@
 	<label title="[Press 4]"><input type="radio" name="diff_type" value="diffPatch"> Patch</label>
 	<span id="scroll-lock" class="emoji-btn" title="Toggle scroll sync [Press 5]"><span>⛓️</span></span>
 	<span id="line-break-toggle" class="emoji-btn" title="Toggle line breaks [Press 6]"><span>↩</span></span>
+	<span id="compare-mode" class="emoji-btn disabled" title="Toggle compare mode: mark the line the cursor is on in the other two [Press 7]"><span>🎯</span></span>
 </div>
 
 <a href="#" id="about" class="source" title="About Online Diff" aria-label="About Online Diff">i</a>
@@ -78,6 +79,7 @@ function loadFromStorage() {
 		}
 		if (data.scrollLock === false) document.getElementById('scroll-lock').click();
 		if (data.lineBreak === false) document.getElementById('line-break-toggle').click();
+		if (data.compare === true) document.getElementById('compare-mode').click();
 	} catch(e) {}
 }
 
@@ -89,7 +91,8 @@ function saveToStorage() {
 			b: b.textContent,
 			diffType: checked ? checked.value : 'diffWords',
 			scrollLock: scrollLockEnabled,
-			lineBreak: lineBreakEnabled
+			lineBreak: lineBreakEnabled,
+			compare: compareEnabled
 		};
 		localStorage.setItem('diffData', JSON.stringify(data));
 	} catch(e) {}
@@ -307,6 +310,11 @@ function lineStarts(text) {
 	for (var i = text.indexOf('\n'); i !== -1; i = text.indexOf('\n', i + 1)) out.push(i + 1);
 	if (out[out.length - 1] !== text.length) out.push(text.length);
 	return out;
+}
+
+// Offset where the line that pos is on starts.
+function startOfLine(text, pos) {
+	return pos > 0 ? text.lastIndexOf('\n', pos - 1) + 1 : 0;
 }
 
 // Length of line k, given that it starts at pos and reads as body (the
@@ -535,7 +543,9 @@ function updateMarks() {
 	markHL.clear();
 	if (!lastDiff) return;
 	var sel = window.getSelection();
-	if (!sel || !sel.rangeCount || sel.isCollapsed) return;
+	// While the button is down a click may still turn into a selection, so the
+	// line under the caret waits for it to come up rather than flash yellow
+	if (!sel || !sel.rangeCount || (sel.isCollapsed && (!compareEnabled || pointerDown))) return;
 	// The lane the selection was started in. It can run out of that lane (a
 	// triple click in the result ends in the next lane), so anything outside
 	// is cut off.
@@ -551,10 +561,19 @@ function updateMarks() {
 	var root = lanes[from];
 	var s = root.contains(range.startContainer) ? laneOffset(from, range.startContainer, range.startOffset) : 0;
 	var e = root.contains(range.endContainer) ? laneOffset(from, range.endContainer, range.endOffset) : Infinity;
+	if (sel.isCollapsed) {
+		// Compare mode: the line the caret is on, as if it were selected
+		var text = root.textContent;
+		s = startOfLine(text, s);
+		e = text.indexOf('\n', s);
+		e = e === -1 ? text.length : e + 1;
+	}
 	var spans = mapSelection(laneMap, from, s, e);
 	for (var j = 0; j < LANES.length; j++) {
 		if (spans[LANES[j]].length) eachRange(LANES[j], spans[LANES[j]], addMark);
 	}
+	// A caret has no selection to show where it is, so its line is marked too
+	if (sel.isCollapsed && e > s) eachRange(from, [s, e], addMark);
 	if (align) alignMarks(from, spans);
 }
 
@@ -569,6 +588,17 @@ function queueMarks(align) {
 }
 
 document.addEventListener('selectionchange', function() { queueMarks(true); });
+
+var pointerDown = false;
+document.addEventListener('pointerdown', function() { pointerDown = true; });
+function onPointerUp() {
+	if (!pointerDown) return;
+	pointerDown = false;
+	queueMarks(true);
+}
+window.addEventListener('pointerup', onPointerUp);
+window.addEventListener('pointercancel', onPointerUp);
+window.addEventListener('blur', onPointerUp);
 
 function alignMinimap() {
 	var offset = 15;
@@ -826,7 +856,7 @@ function cleanPaste(e) {
 	if (at) {
 		text = lineCut;
 		var pane = e.currentTarget;
-		selectText(pane, pane.textContent.lastIndexOf('\n', at[0] - 1) + 1);
+		selectText(pane, startOfLine(pane.textContent, at[0]));
 		insertPlainText(text);
 		selectText(pane, at[0] + text.length);
 	} else {
@@ -879,7 +909,7 @@ function onPaneKeyDown(e) {
 		var at = paneSelection(pane);
 		if (!at) return;
 		var text = pane.textContent;
-		var from = text.lastIndexOf('\n', at[0] - 1) + 1;
+		var from = startOfLine(text, at[0]);
 		var to = text.indexOf('\n', at[0]);
 		if (to !== -1) {
 			selectText(pane, from, to + 1);
@@ -905,14 +935,14 @@ function moveLines(pane, dir) {
 	var text = pane.textContent;
 	// A selection that ends at the very start of a line does not take that line along
 	var end = at[1] > at[0] && text[at[1] - 1] === '\n' ? at[1] - 1 : at[1];
-	var from = text.lastIndexOf('\n', at[0] - 1) + 1;
+	var from = startOfLine(text, at[0]);
 	var to = text.indexOf('\n', end);
 	if (to === -1) to = text.length;
 	var lines = text.slice(from, to);
 	var start, stop, moved, shift;
 	if (dir < 0) {
 		if (from === 0) return;
-		start = text.lastIndexOf('\n', from - 2) + 1;
+		start = startOfLine(text, from - 1);
 		stop = to;
 		var above = text.slice(start, from - 1);
 		moved = lines + '\n' + above;
@@ -1029,6 +1059,7 @@ document.addEventListener('keydown', function(e) {
 	if (e.key === '4') { radio[3].click(); }
 	if (e.key === '5') { scrollLockBtn.click(); }
 	if (e.key === '6') { lineBreakToggle.click(); }
+	if (e.key === '7') { compareToggle.click(); }
 });
 
 // About
@@ -1086,6 +1117,19 @@ lineBreakToggle.onclick = function() {
 	}
 	scrollAnchor = null;
 	renderMinimap();
+	saveToStorage();
+};
+
+// Compare mode: with nothing selected, the line the caret is on is marked in
+// the other two lanes and lined up with them, as if it were selected. It
+// follows the caret. Selecting something marks that instead, as before.
+var compareEnabled = false;
+var compareToggle = document.getElementById('compare-mode');
+
+compareToggle.onclick = function() {
+	compareEnabled = !compareEnabled;
+	compareToggle.classList.toggle('disabled', !compareEnabled);
+	queueMarks(true);
 	saveToStorage();
 };
 

@@ -195,7 +195,8 @@ td.result-cell {
 	margin-left: 2em;
 }
 
-#line-break-toggle {
+#line-break-toggle,
+#compare-mode {
 	margin-left: 1em;
 }
 
