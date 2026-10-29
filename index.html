@@ -42,7 +42,12 @@
 </div>
 
 <a href="#" id="about" class="source" title="About Online Diff" aria-label="About Online Diff">i</a>
-<span id="version">v1.4.0</span>
+<span id="version">v1.5.0</span>
+<span id="knob-a" class="knob" title="Hide left side a bit to give more room. [Press 8]"><span><svg viewBox="0 0 6 10" aria-hidden="true"><path d="M4.5 1.5L1.5 5L4.5 8.5"/></svg></span></span>
+<span id="knob-back" class="knob back" style="display: none"><span><svg viewBox="0 0 6 10" aria-hidden="true"><path d="M4.5 1.5L1.5 5L4.5 8.5"/></svg></span></span>
+<span id="knob-ia" class="knob inner" title="Hide left side a bit to give more room. [Press 8]"><span><svg viewBox="0 0 6 10" aria-hidden="true"><path d="M4.5 1.5L1.5 5L4.5 8.5"/></svg></span></span>
+<span id="knob-ib" class="knob inner right" title="Hide right side a bit to give more room. [Press 9]"><span><svg viewBox="0 0 6 10" aria-hidden="true"><path d="M4.5 1.5L1.5 5L4.5 8.5"/></svg></span></span>
+<span id="knob-b" class="knob right" title="Hide right side a bit to give more room. [Press 9]"><span><svg viewBox="0 0 6 10" aria-hidden="true"><path d="M4.5 1.5L1.5 5L4.5 8.5"/></svg></span></span>
 
 <table>
 	<tr>
@@ -80,6 +85,7 @@ function loadFromStorage() {
 		if (data.scrollLock === false) document.getElementById('scroll-lock').click();
 		if (data.lineBreak === false) document.getElementById('line-break-toggle').click();
 		if (data.compare === true) document.getElementById('compare-mode').click();
+		if (data.narrow === 'a' || data.narrow === 'b') setNarrow(data.narrow);
 	} catch(e) {}
 }
 
@@ -92,7 +98,8 @@ function saveToStorage() {
 			diffType: checked ? checked.value : 'diffWords',
 			scrollLock: scrollLockEnabled,
 			lineBreak: lineBreakEnabled,
-			compare: compareEnabled
+			compare: compareEnabled,
+			narrow: narrowLane
 		};
 		localStorage.setItem('diffData', JSON.stringify(data));
 	} catch(e) {}
@@ -526,15 +533,21 @@ function addMark(startNode, startOffset, endNode, endOffset) {
 // How far down the screen the char at offset pos of the lane's text is, or
 // null if it has no box to measure.
 function topOf(lane, pos) {
-	var top = null;
-	eachRange(lane, [pos, pos + 1], function(startNode, startOffset, endNode, endOffset) {
+	var rect = rectOf(lane, pos, pos + 1);
+	return rect ? rect.top : null;
+}
+
+// The first box on screen of chars [start, end) of the lane's text, or null.
+function rectOf(lane, start, end) {
+	var rect = null;
+	eachRange(lane, [start, end], function(startNode, startOffset, endNode, endOffset) {
 		var range = document.createRange();
 		range.setStart(startNode, startOffset);
 		range.setEnd(endNode, endOffset);
 		var rects = range.getClientRects();
-		if (rects.length) top = rects[0].top;
+		if (rects.length) rect = rects[0];
 	});
-	return top;
+	return rect;
 }
 
 function updateMarks() {
@@ -544,8 +557,9 @@ function updateMarks() {
 	if (!lastDiff) return;
 	var sel = window.getSelection();
 	// While the button is down a click may still turn into a selection, so the
-	// line under the caret waits for it to come up rather than flash yellow
-	if (!sel || !sel.rangeCount || (sel.isCollapsed && (!compareEnabled || pointerDown))) return;
+	// line under the caret waits for it to come up rather than flash yellow.
+	// And for a moment after, as it may be the first half of a double click.
+	if (!sel || !sel.rangeCount || (sel.isCollapsed && (!compareEnabled || pointerDown || clickHeld))) return;
 	// The lane the selection was started in. It can run out of that lane (a
 	// triple click in the result ends in the next lane), so anything outside
 	// is cut off.
@@ -574,7 +588,11 @@ function updateMarks() {
 	}
 	// A caret has no selection to show where it is, so its line is marked too
 	if (sel.isCollapsed && e > s) eachRange(from, [s, e], addMark);
-	if (align) alignMarks(from, spans);
+	if (!align) return;
+	alignMarks(from, spans);
+	if (narrowLane && narrowLane !== from && spans[narrowLane].length) {
+		seekNarrow(rectOf(narrowLane, spans[narrowLane][0], spans[narrowLane][1]));
+	}
 }
 
 // align: also line the lanes up on the marks (see alignMarks). For when the
@@ -587,13 +605,27 @@ function queueMarks(align) {
 	requestAnimationFrame(updateMarks);
 }
 
-document.addEventListener('selectionchange', function() { queueMarks(true); });
+document.addEventListener('selectionchange', function() {
+	queueMarks(true);
+	seekCaret();
+});
 
 var pointerDown = false;
+var clickHeld = false, clickTimer = null;
 document.addEventListener('pointerdown', function() { pointerDown = true; });
 function onPointerUp() {
 	if (!pointerDown) return;
 	pointerDown = false;
+	var sel = window.getSelection();
+	if (sel && sel.isCollapsed) {
+		// A click, not a drag: give a second click time to come
+		clickHeld = true;
+		clearTimeout(clickTimer);
+		clickTimer = setTimeout(function() {
+			clickHeld = false;
+			queueMarks(true);
+		}, 250);
+	}
 	queueMarks(true);
 }
 window.addEventListener('pointerup', onPointerUp);
@@ -693,12 +725,18 @@ minimap.addEventListener('click', function(e) {
 // puts them on screen together. Outside the lanes the wheel scrolls the result.
 function onWheel(e) {
 	if (e.ctrlKey) return; // pinch to zoom
+	var dx = e.deltaX, dy = e.deltaY;
+	if (e.shiftKey && !dx) { dx = dy; dy = 0; }
+	// Sideways over a narrow lane slides its text along
+	if (narrowLane && Math.abs(dx) > Math.abs(dy) && e.target.closest && e.target.closest('td.narrow')) {
+		putNarrow(narrowShift + dx);
+		e.preventDefault();
+		return;
+	}
 	var lane = e.target.closest && e.target.closest('#a, #b, td > div:not(#minimap)');
 	// With the lanes on their own the browser can do it, there is nothing to keep together
 	if (lane && !scrollLockEnabled) return;
 	var panel = lane || resultScroller;
-	var dx = e.deltaX, dy = e.deltaY;
-	if (e.shiftKey && !dx) { dx = dy; dy = 0; }
 	if (e.deltaMode) {
 		// A mouse wheel that counts in lines (18px each here) or in pages
 		var unit = e.deltaMode === 1 ? 18 : panel.clientHeight;
@@ -718,6 +756,7 @@ window.addEventListener('wheel', onWheel, {passive: false});
 
 var resizeTimer = null;
 window.addEventListener('resize', function() {
+	layoutNarrow();
 	clearTimeout(resizeTimer);
 	resizeTimer = setTimeout(renderMinimap, 100);
 	scrollAnchor = null;
@@ -1060,6 +1099,8 @@ document.addEventListener('keydown', function(e) {
 	if (e.key === '5') { scrollLockBtn.click(); }
 	if (e.key === '6') { lineBreakToggle.click(); }
 	if (e.key === '7') { compareToggle.click(); }
+	if (e.key === '8') { knobs.a.click(); }
+	if (e.key === '9') { knobs.b.click(); }
 });
 
 // About
@@ -1132,6 +1173,122 @@ compareToggle.onclick = function() {
 	queueMarks(true);
 	saveToStorage();
 };
+
+// Narrow lane: A or B steps aside to give the other one room to edit in. It
+// keeps the width it had, so its lines do not wrap differently, and shows a
+// strip of it, which slides sideways to whatever is marked or typed in it.
+// The result keeps its width too, the other lane gets all that was freed.
+var narrowLane = null;  // 'a' or 'b' while that lane is narrow
+var narrowShift = 0;    // how far its text is slid left
+var knobs = {a: document.getElementById('knob-a'), b: document.getElementById('knob-b')};
+// While a lane is narrow, a knob on the result's side towards the wide lane,
+// shown as if the pointer were on it: the way back to thirds, in plain sight
+var knobBack = document.getElementById('knob-back');
+var table = document.querySelector('table');
+var cells = table.rows[0].cells;  // A, result, B
+
+// One step a click: from thirds to narrow, and from either narrow back to thirds
+knobs.a.onclick = function() { setNarrow(narrowLane ? null : 'a'); };
+knobs.b.onclick = function() { setNarrow(narrowLane ? null : 'b'); };
+// Not a place to start a selection, and the caret stays where it is
+knobBack.onclick = function() { setNarrow(null); };
+// The same two on the edges of the result, there while the lanes are thirds
+var knobsIn = {a: document.getElementById('knob-ia'), b: document.getElementById('knob-ib')};
+knobsIn.a.onclick = function() { setNarrow('a'); };
+knobsIn.b.onclick = function() { setNarrow('b'); };
+knobs.a.onmousedown = knobs.b.onmousedown = knobBack.onmousedown = knobsIn.a.onmousedown = knobsIn.b.onmousedown = function(e) { e.preventDefault(); };
+
+function setNarrow(lane) {
+	narrowLane = lane;
+	narrowShift = 0;
+	// The chevrons point the way the result will go on a click: out from the
+	// middle while in thirds, back to it while a lane is narrow
+	knobs.a.classList.toggle('right', lane === 'a');
+	knobs.b.classList.toggle('right', lane !== 'b');
+	var back = lane === 'a' ? 'Show the left side again.' : 'Show the right side again.';
+	knobs.a.title = (lane ? back : 'Hide left side a bit to give more room.') + ' [Press 8]';
+	knobs.b.title = (lane ? back : 'Hide right side a bit to give more room.') + ' [Press 9]';
+	knobBack.title = back;
+	knobBack.classList.toggle('right', lane === 'a');
+	layoutNarrow();
+	scrollAnchor = null;
+	queueMarks(true);
+	saveToStorage();
+}
+
+function layoutNarrow() {
+	// A third of what the cells get, the spacing between them taken off
+	var spacing = table.clientWidth - cells[0].offsetWidth - cells[1].offsetWidth - cells[2].offsetWidth;
+	var third = (table.clientWidth - spacing) / 3;
+	for (var j = 0; j < 3; j += 2) {
+		var cell = cells[j], pane = cell.firstElementChild;
+		if (pane.id === narrowLane) {
+			cell.className = 'narrow';
+			cell.style.width = Math.min(third, Math.max(table.clientWidth * 0.08, 150) + 8) + 'px';
+			// The width it has as one of three, less the cell's padding and its own
+			var css = getComputedStyle(pane);
+			pane.style.width = (third - 8 - parseFloat(css.paddingLeft) - parseFloat(css.paddingRight)) + 'px';
+		} else {
+			cell.className = '';
+			cell.style.width = narrowLane ? 'auto' : '';
+			pane.style.width = pane.style.transform = pane.style.clipPath = '';
+		}
+	}
+	cells[1].style.width = narrowLane ? third + 'px' : '';
+	if (narrowLane) {
+		putNarrow(narrowShift);
+		// The strip's edge goes down as far as the lane does
+		var cell = cells[narrowLane === 'a' ? 0 : 2];
+		cell.style.setProperty('--lane-bottom', cell.getBoundingClientRect().bottom - lanes[narrowLane].getBoundingClientRect().bottom + 'px');
+	}
+	// Each knob on the outer side of its lane, halfway between it and the edge
+	// of the window (the cell's padding of 4px is where the lane starts)
+	knobs.a.style.left = (cells[0].getBoundingClientRect().left + 4) / 2 + 'px';
+	knobs.b.style.left = (cells[2].getBoundingClientRect().right - 4 + document.documentElement.clientWidth) / 2 + 'px';
+	// The back knob on the edge of the wide lane that faces the result, right
+	// on its line (the cell's padding of 4px is where the lane starts)
+	knobBack.style.display = narrowLane ? '' : 'none';
+	// With A narrow that edge is where the minimap is, so it sits just left of
+	// it instead: 1px off it, the pill 12px wide
+	if (narrowLane === 'a') knobBack.style.left = minimap.getBoundingClientRect().left - 7 + 'px';
+	if (narrowLane === 'b') knobBack.style.left = cells[0].getBoundingClientRect().right - 4 + 'px';
+	// In thirds: on A's edge, and on the right just left of the minimap, 1px
+	// off it when grown to 11px
+	knobsIn.a.style.display = knobsIn.b.style.display = narrowLane ? 'none' : '';
+	knobsIn.a.style.left = cells[0].getBoundingClientRect().right - 4 + 'px';
+	knobsIn.b.style.left = minimap.getBoundingClientRect().left - 6.5 + 'px';
+}
+layoutNarrow();
+
+function putNarrow(shift) {
+	var pane = lanes[narrowLane];
+	var max = pane.offsetWidth - (pane.parentNode.clientWidth - 8);
+	narrowShift = Math.max(0, Math.min(max, shift));
+	pane.style.transform = narrowShift ? 'translateX(' + -narrowShift + 'px)' : '';
+	// Cut to the strip that shows, with round corners like a whole lane
+	pane.style.clipPath = 'inset(0 ' + (max - narrowShift) + 'px 0 ' + narrowShift + 'px round 4px)';
+}
+
+// Slide the narrow lane so that rect (client coordinates) is in its strip:
+// to the left edge if it is past that, to the right edge if past that one.
+function seekNarrow(rect) {
+	if (!rect || !rect.height) return;
+	var pane = lanes[narrowLane], left = pane.getBoundingClientRect().left;
+	var x0 = rect.left - left, x1 = rect.right - left;
+	var w = pane.parentNode.clientWidth - 8;
+	if (x0 < narrowShift || x1 - x0 > w) putNarrow(x0 - 10);
+	else if (x1 > narrowShift + w) putNarrow(x1 - w + 10);
+}
+
+// The caret is not scrolled into view by the browser, as nothing scrolls
+function seekCaret() {
+	if (!narrowLane) return;
+	var sel = window.getSelection();
+	if (!sel || !sel.focusNode || !lanes[narrowLane].contains(sel.focusNode)) return;
+	var range = document.createRange();
+	range.setStart(sel.focusNode, sel.focusOffset);
+	seekNarrow(range.getClientRects()[0] || range.getBoundingClientRect());
+}
 
 // Scroll sync is proportional: top meets top, bottom meets bottom and in
 // between each lane moves at the speed its own height calls for. That cannot

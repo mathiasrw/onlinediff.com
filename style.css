@@ -60,7 +60,7 @@ ins .chg { background: #ABF5D1; }
 
 /* Text selected in one lane, marked where it sits in the other two. Background
    only, so del/ins keep their own text colour underneath. */
-::highlight(mark) { background-color: #FFE380; }
+::highlight(mark) { background-color: rgba(255, 227, 128, 0.8); }
 
 .chunk-header {
 	color: #8a008b;
@@ -255,6 +255,9 @@ td.result-cell {
 	background: #F9F9F9;
 	border-color: #BBB #D9D9D9 #DDD;
 	border-radius: 4px;
+	/* A thin line round the box. A shadow and not a border, which would take
+	   up room and make the lanes a pixel off from what the layout counts on */
+	box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.09);
 	-webkit-user-modify: read-write-plaintext-only;
 	outline: none;
 }
@@ -270,6 +273,111 @@ td.result-cell {
 	}
 }
 
+
+/* A lane made narrow: a strip of it, its text slid along under the cell */
+td.narrow {
+	position: relative;
+	overflow: hidden;
+}
+/* The lane's edge is off to the sides with it, so the strip gets its own */
+td.narrow > div {
+	box-shadow: none;
+}
+td.narrow::after {
+	content: '';
+	position: absolute;
+	inset: 4px 4px var(--lane-bottom, 1px) 4px;
+	border-radius: 4px;
+	box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.09);
+	pointer-events: none;
+}
+td.narrow:focus-within::after {
+	box-shadow: 0 0 4px #2175c9;
+}
+
+/* A knob in the gap between two lanes: a faint line that shows a bit more of
+   itself when the pointer comes near. The span around it is that nearness. */
+.knob {
+	position: fixed;
+	/* The line starts 43% down, the nearness around it a little above that */
+	top: 43%;
+	width: 24px;
+	height: 90px;
+	margin: -31px 0 0 -12px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	cursor: pointer;
+	z-index: 5;
+	user-select: none;
+	-webkit-user-select: none;
+}
+.knob > span {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 3px;
+	height: 28px;
+	border-radius: 2px;
+	background: rgba(0, 0, 0, 0.12);
+	transition: width 0.15s, height 0.15s, border-radius 0.15s, background 0.15s, transform 0.15s;
+}
+/* The pointer over the lane: the line is a touch clearer, to be noticed */
+body:has(tr > td:first-child:hover) #knob-a > span,
+body:has(tr > td:last-child:hover) #knob-b > span,
+body:has(td.result-cell:hover) .knob.inner > span {
+	background: rgba(0, 0, 0, 0.2);
+}
+.knob:hover > span {
+	width: 11px;
+	height: 40px;
+	border-radius: 6px;
+	background: rgba(0, 0, 0, 0.22);
+}
+/* The way back from a narrow lane: always as it is with the pointer on it */
+.knob.back > span {
+	width: 12px;
+	height: 40px;
+	border-radius: 6px;
+	background: rgba(0, 0, 0, 0.22);
+}
+.knob.back:hover > span {
+	background: rgba(0, 0, 0, 0.32);
+}
+/* The arrow a little towards the wide lane, its back on the lane's edge */
+.knob.back svg {
+	opacity: 1;
+	transform: translateX(-2px);
+}
+.knob.back.right svg {
+	transform: translateX(2px) scaleX(-1);
+}
+
+/* Grown, it keeps a few pixels off the edge of the window */
+#knob-a:hover > span { transform: translateX(3px); }
+#knob-b:hover > span { transform: translateX(-3px); }
+/* The thin ones on the result's edges sit a little right of where they grow */
+#knob-ia > span { transform: translateX(1px); }
+#knob-ib > span { transform: translateX(3px); }
+#knob-ia:hover > span { transform: translateX(-1px); }
+#knob-ib:hover > span { transform: none; }
+.knob svg {
+	width: 6px;
+	height: 10px;
+	fill: none;
+	stroke: #fff;
+	stroke-width: 1.4;
+	stroke-linecap: round;
+	stroke-linejoin: round;
+	opacity: 0;
+	transition: opacity 0.15s;
+}
+.knob:hover svg {
+	opacity: 1;
+}
+.knob.right svg {
+	transform: scaleX(-1);
+}
 
 #a,#b{
 padding:10px;
