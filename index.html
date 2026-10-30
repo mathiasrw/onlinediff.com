@@ -32,22 +32,28 @@
 
 <div id="settings">
 	<h1>Diff</h1>
-	<label title="[Press 1]"><input type="radio" name="diff_type" value="diffChars" > Chars</label>
-	<label title="[Press 2]"><input type="radio" name="diff_type" value="diffWords" checked> Words</label>
-	<label title="[Press 3]"><input type="radio" name="diff_type" value="diffLines"> Lines</label>
-	<label title="[Press 4]"><input type="radio" name="diff_type" value="diffPatch"> Patch</label>
-	<span id="scroll-lock" class="emoji-btn" title="Toggle scroll sync [Press 5]"><span>⛓️</span></span>
-	<span id="line-break-toggle" class="emoji-btn" title="Toggle line breaks [Press 6]"><span>↩</span></span>
-	<span id="compare-mode" class="emoji-btn disabled" title="Toggle compare mode: mark the line the cursor is on in the other two [Press 7]"><span>🎯</span></span>
+	<label data-tip="[Press 1]"><input type="radio" name="diff_type" value="diffChars" > Chars</label>
+	<label data-tip="[Press 2]"><input type="radio" name="diff_type" value="diffWords" checked> Words</label>
+	<label data-tip="[Press 3]"><input type="radio" name="diff_type" value="diffLines"> Lines</label>
+	<label data-tip="[Press 4]"><input type="radio" name="diff_type" value="diffPatch"> Patch</label>
+	<span id="scroll-lock" class="emoji-btn" data-tip="Toggle scroll sync [Press 5]" aria-label="Toggle scroll sync"><span><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6.8 9.2a2.8 2.8 0 0 0 4 0l2.2-2.2a2.8 2.8 0 0 0-4-4l-.7.7"/><path d="M9.2 6.8a2.8 2.8 0 0 0-4 0L3 9a2.8 2.8 0 0 0 4 4l.7-.7"/></svg></span></span>
+	<span id="line-break-toggle" class="emoji-btn" data-tip="Toggle line breaks [Press 6]" aria-label="Toggle line breaks"><span><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 3.5h11"/><path d="M2.5 8h9a2.25 2.25 0 0 1 0 4.5H8"/><path d="M9.5 11L8 12.5L9.5 14"/><path d="M2.5 12.5h3"/></svg></span></span>
+	<span id="compare-mode" class="emoji-btn disabled" data-tip="Toggle compare mode [Press 7]" aria-label="Toggle compare mode"><span><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="2.2"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2"/></svg></span></span>
 </div>
 
-<a href="#" id="about" class="source" title="About Online Diff" aria-label="About Online Diff">i</a>
-<span id="version">v1.5.0</span>
-<span id="knob-a" class="knob" title="Hide left side a bit to give more room. [Press 8]"><span><svg viewBox="0 0 6 10" aria-hidden="true"><path d="M4.5 1.5L1.5 5L4.5 8.5"/></svg></span></span>
+<a href="#" id="about" class="source" data-tip="About Online Diff" aria-label="About Online Diff" aria-expanded="false" aria-controls="about-box">i</a>
+<div id="about-box" hidden>
+	<p>I got really tired of always having to search for a tool to compare text online and having to click a few times to find one that gave me clarity - so I got a memorable domain and made the tool I would be looking for myself. No tracking. No watermarks. No ads.</p>
+	<p>Enjoy...</p>
+	<p>@rangelwulff</p>
+</div>
+<div id="tip" role="tooltip" hidden></div>
+<a id="version" href="https://github.com/mathiasrw/onlinediff.com" target="_blank" rel="noopener" data-tip="Source on GitHub">v1.5.1</a>
+<span id="knob-a" class="knob" data-tip="Hide left side a bit to give more room. [Press 8]"><span><svg viewBox="0 0 6 10" aria-hidden="true"><path d="M4.5 1.5L1.5 5L4.5 8.5"/></svg></span></span>
 <span id="knob-back" class="knob back" style="display: none"><span><svg viewBox="0 0 6 10" aria-hidden="true"><path d="M4.5 1.5L1.5 5L4.5 8.5"/></svg></span></span>
-<span id="knob-ia" class="knob inner" title="Hide left side a bit to give more room. [Press 8]"><span><svg viewBox="0 0 6 10" aria-hidden="true"><path d="M4.5 1.5L1.5 5L4.5 8.5"/></svg></span></span>
-<span id="knob-ib" class="knob inner right" title="Hide right side a bit to give more room. [Press 9]"><span><svg viewBox="0 0 6 10" aria-hidden="true"><path d="M4.5 1.5L1.5 5L4.5 8.5"/></svg></span></span>
-<span id="knob-b" class="knob right" title="Hide right side a bit to give more room. [Press 9]"><span><svg viewBox="0 0 6 10" aria-hidden="true"><path d="M4.5 1.5L1.5 5L4.5 8.5"/></svg></span></span>
+<span id="knob-ia" class="knob inner" data-tip="Hide left side a bit to give more room. [Press 8]"><span><svg viewBox="0 0 6 10" aria-hidden="true"><path d="M4.5 1.5L1.5 5L4.5 8.5"/></svg></span></span>
+<span id="knob-ib" class="knob inner right" data-tip="Hide right side a bit to give more room. [Press 9]"><span><svg viewBox="0 0 6 10" aria-hidden="true"><path d="M4.5 1.5L1.5 5L4.5 8.5"/></svg></span></span>
+<span id="knob-b" class="knob right" data-tip="Hide right side a bit to give more room. [Press 9]"><span><svg viewBox="0 0 6 10" aria-hidden="true"><path d="M4.5 1.5L1.5 5L4.5 8.5"/></svg></span></span>
 
 <table>
 	<tr>
@@ -56,7 +62,7 @@
 No ads, no tracking, no BS. 
 
 See the diff per char, word, line, or get the patch.</div></td>
-		<td class="result-cell"><div style="padding-top: 10px;"><pre id="result"></pre></div><div id="minimap" title="Change overview"></div></td>
+		<td class="result-cell"><div style="padding-top: 10px;"><pre id="result"></pre></div><div id="minimap" data-tip="Change overview"></div></td>
 		<td><div contenteditable="true" id="b">Highlight the differences between two texts. 
 
 No ads, no tracking, no BS. 
@@ -608,11 +614,93 @@ function queueMarks(align) {
 document.addEventListener('selectionchange', function() {
 	queueMarks(true);
 	seekCaret();
+	if (caretKeyed && Date.now() - caretKeyedAt < 500) keepCaretClear(caretKeyed);
 });
+
+// Moving the caret with the keys, the lane scrolls before the caret gets to its
+// edge: from about ten lines off it the text glides along under the caret, so
+// there is always some of what comes next to be seen. Clicks are left alone.
+//
+// The glide is ours, frame by frame, and not the browser's: it eases towards
+// where the caret wants to be, slowly as the caret comes into the zone and
+// faster the closer it gets to the edge. Two lines off the edge is as close as
+// it gets, any closer and the browser would jump in with a scroll of its own.
+var caretKeyed = null, caretKeyedAt = 0;
+var glide = null, glideFrame = 0, glideLast = 0;
+
+function keepCaretClear(pane) {
+	var sel = window.getSelection();
+	if (!sel || !sel.focusNode || !pane.contains(sel.focusNode)) return;
+	var rect = caretRect(pane, sel);
+	if (!rect) return;
+	// The caret's place in the text, which scrolling does not change
+	var view = pane.getBoundingClientRect();
+	glide = {pane: pane, top: rect.top - view.top + pane.scrollTop, bottom: rect.bottom - view.top + pane.scrollTop};
+	// No time gone by: only what it takes to keep off the edge, right now
+	if (glideStep(0) && !glideFrame) {
+		glideLast = performance.now();
+		glideFrame = requestAnimationFrame(onGlideFrame);
+	}
+}
+
+function onGlideFrame(now) {
+	var dt = Math.min(50, now - glideLast);
+	glideLast = now;
+	glideFrame = glideStep(dt) ? requestAnimationFrame(onGlideFrame) : 0;
+}
+
+// Scroll the glide on by dt ms. Whether there is still some way to go.
+function glideStep(dt) {
+	if (!glide) return false;
+	var pane = glide.pane, h = pane.clientHeight;
+	var line = parseFloat(getComputedStyle(pane).lineHeight);
+	var margin = Math.min(10 * line, h / 3);
+	var dy = 0;
+	if (glide.bottom - pane.scrollTop > h - margin) dy = glide.bottom - pane.scrollTop - (h - margin);
+	else if (glide.top - pane.scrollTop < margin) dy = glide.top - pane.scrollTop - margin;
+	var depth = Math.min(1, Math.abs(dy) / margin);
+	var step = dy * (1 - Math.exp(-(12 + 60 * depth * depth) * dt / 1000));
+	var must = Math.abs(dy) - (margin - 2 * line);
+	if (must > Math.abs(step)) step = must * Math.sign(dy);
+	// A pixel at least, as a browser may round a part of one away, and the
+	// last bit in one go
+	if (dt && Math.abs(step) < 1) step = Math.sign(dy);
+	if (dt && Math.abs(dy - step) < 1) step = dy;
+	var max = pane.scrollHeight - h;
+	var was = pane.scrollTop;
+	pane.scrollTop = Math.max(0, Math.min(max, was + step));
+	var moved = pane.scrollTop !== was;
+	// Done once there, or at the top or bottom with nowhere further to go
+	if (Math.abs(dy) < 0.5 || (dt && !moved)) {
+		glide = null;
+		return false;
+	}
+	return true;
+}
+
+// Where the caret is. A caret on an empty line has no box of its own, so it
+// borrows the one of the line break it stands on, or the one before it.
+function caretRect(pane, sel) {
+	var range = document.createRange();
+	range.setStart(sel.focusNode, sel.focusOffset);
+	var rect = range.getClientRects()[0];
+	if (rect && rect.height) return rect;
+	var at = laneOffset(pane.id, sel.focusNode, sel.focusOffset);
+	var text = pane.textContent;
+	if (at < text.length) {
+		rect = rectOf(pane.id, at, at + 1);
+		if (rect && rect.height) return rect;
+	}
+	if (at > 0) {
+		rect = rectOf(pane.id, at - 1, at);
+		if (rect && rect.height) return text[at - 1] === '\n' ? new DOMRect(rect.left, rect.bottom, 0, rect.height) : rect;
+	}
+	return null;
+}
 
 var pointerDown = false;
 var clickHeld = false, clickTimer = null;
-document.addEventListener('pointerdown', function() { pointerDown = true; });
+document.addEventListener('pointerdown', function() { pointerDown = true; caretKeyed = glide = null; });
 function onPointerUp() {
 	if (!pointerDown) return;
 	pointerDown = false;
@@ -633,7 +721,8 @@ window.addEventListener('pointercancel', onPointerUp);
 window.addEventListener('blur', onPointerUp);
 
 function alignMinimap() {
-	var offset = 15;
+	// From the top of the input boxes, level with B beside it
+	var offset = lanes.b.getBoundingClientRect().top - resultScroller.getBoundingClientRect().top;
 	minimap.style.top = (resultScroller.offsetTop + offset) + 'px';
 	minimap.style.height = Math.max(0, resultScroller.offsetHeight - offset) + 'px';
 }
@@ -725,6 +814,7 @@ minimap.addEventListener('click', function(e) {
 // puts them on screen together. Outside the lanes the wheel scrolls the result.
 function onWheel(e) {
 	if (e.ctrlKey) return; // pinch to zoom
+	glide = null;
 	var dx = e.deltaX, dy = e.deltaY;
 	if (e.shiftKey && !dx) { dx = dy; dy = 0; }
 	// Sideways over a narrow lane slides its text along
@@ -939,6 +1029,10 @@ var lineCut = null;      // the last line cut, to know it again when it is paste
 
 function onPaneKeyDown(e) {
 	var pane = e.currentTarget;
+	if (e.key !== 'Shift' && e.key !== 'Alt' && e.key !== 'Control' && e.key !== 'Meta' && !((e.metaKey || e.ctrlKey) && (e.key === 'a' || e.key === 'A'))) {
+		caretKeyed = pane;
+		caretKeyedAt = Date.now();
+	}
 	if (e.altKey && !e.shiftKey && !e.metaKey && !e.ctrlKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
 		e.preventDefault();
 		moveLines(pane, e.key === 'ArrowUp' ? -1 : 1);
@@ -1082,6 +1176,11 @@ document.addEventListener('keydown', function(e) {
 	if (e.metaKey || e.ctrlKey || e.altKey) return;
 	// Esc leaves the text box so the number shortcuts take over again
 	if (e.key === 'Escape' || e.key === 'Esc') {
+		if (!aboutBox.hidden) {
+			showAbout(false);
+			e.preventDefault();
+			return;
+		}
 		var el = document.activeElement;
 		if (isTyping(el)) {
 			el.blur();
@@ -1103,11 +1202,83 @@ document.addEventListener('keydown', function(e) {
 	if (e.key === '9') { knobs.b.click(); }
 });
 
-// About
-document.getElementById('about').onclick = function() {
-	alert('I got really tired of always having to search for a tool to compare text online and having to click a few times to find one with no BS - so I got a memorable domain and made the tool I would be looking for myself. No tracking. No watermarks. No ads.\n\nEnjoy...\n\n@rangelwulff');
+// About: the i opens and closes a box over the corner. A click anywhere else
+// or Esc closes it too.
+var about = document.getElementById('about');
+var aboutBox = document.getElementById('about-box');
+function showAbout(show) {
+	aboutBox.hidden = !show;
+	about.setAttribute('aria-expanded', show);
+	about.classList.toggle('open', show);
+}
+about.onclick = function() {
+	showAbout(aboutBox.hidden);
 	return false;
 };
+document.addEventListener('pointerdown', function(e) {
+	if (!aboutBox.hidden && !aboutBox.contains(e.target) && e.target !== about) showAbout(false);
+});
+
+// Hints: our own, as the browser's take a second to come and look out of
+// place. Anything with a data-tip gets one, shown above it, a "[Press 5]" at
+// the end as a key. Moving from one to the next shows the next straight away.
+var tip = document.getElementById('tip');
+var tipFor = null, tipTimer = null, tipShownAt = 0;
+
+function showTip(el) {
+	var text = el.dataset.tip, key = /\s*\[Press (.+)\]$/.exec(text);
+	tip.textContent = key ? text.slice(0, key.index) : text;
+	if (key) {
+		var kbd = document.createElement('kbd');
+		kbd.textContent = key[1];
+		if (!key.index) kbd.style.marginLeft = '0';
+		tip.appendChild(kbd);
+	}
+	tip.hidden = false;
+	// Measured in the corner, where it has all the room it wants
+	tip.style.left = tip.style.top = '0';
+	var r = el.getBoundingClientRect(), w = tip.offsetWidth, h = tip.offsetHeight;
+	var x = Math.max(8, Math.min(document.documentElement.clientWidth - w - 8, r.left + r.width / 2 - w / 2));
+	var y = r.top - h - 6;
+	if (el.classList.contains('knob')) {
+		// Beside a knob, as above it is text that is being worked on
+		var line = el.firstChild.getBoundingClientRect();
+		y = line.top + line.height / 2 - h / 2;
+		x = line.left > document.documentElement.clientWidth / 2 ? line.left - w - 8 : line.right + 8;
+	} else if (el === minimap) {
+		y = lastTipY - h - 10;
+	}
+	tip.style.left = x + 'px';
+	tip.style.top = Math.max(4, y) + 'px';
+	tipFor = el;
+	tipShownAt = Date.now();
+}
+
+function hideTip() {
+	clearTimeout(tipTimer);
+	if (tipFor) tipShownAt = Date.now();
+	tip.hidden = true;
+	tipFor = null;
+}
+
+var lastTipY = 0;
+document.addEventListener('mouseover', function(e) {
+	var el = e.target.closest && e.target.closest('[data-tip]');
+	if (el === tipFor) return;
+	hideTip();
+	if (!el || (el === about && !aboutBox.hidden)) return;
+	// Straight away if one was just showing, else after a short moment
+	tipTimer = setTimeout(function() { showTip(el); }, Date.now() - tipShownAt < 300 ? 0 : 250);
+});
+document.addEventListener('mousemove', function(e) { lastTipY = e.clientY; }, {passive: true});
+document.addEventListener('pointerdown', hideTip);
+// A click on a toggle may change what it says: say it again, now that it has
+document.addEventListener('click', function(e) {
+	var el = e.target.closest && e.target.closest('[data-tip]');
+	if (el && el !== about && el.matches(':hover') && el.getClientRects().length) showTip(el);
+});
+document.addEventListener('keydown', function() { if (tipFor) hideTip(); });
+document.documentElement.addEventListener('mouseleave', hideTip);
 
 // Scroll sync
 var scrollLockEnabled = true;
@@ -1206,9 +1377,9 @@ function setNarrow(lane) {
 	knobs.a.classList.toggle('right', lane === 'a');
 	knobs.b.classList.toggle('right', lane !== 'b');
 	var back = lane === 'a' ? 'Show the left side again.' : 'Show the right side again.';
-	knobs.a.title = (lane ? back : 'Hide left side a bit to give more room.') + ' [Press 8]';
-	knobs.b.title = (lane ? back : 'Hide right side a bit to give more room.') + ' [Press 9]';
-	knobBack.title = back;
+	knobs.a.dataset.tip = (lane ? back : 'Hide left side a bit to give more room.') + ' [Press 8]';
+	knobs.b.dataset.tip = (lane ? back : 'Hide right side a bit to give more room.') + ' [Press 9]';
+	knobBack.dataset.tip = back;
 	knobBack.classList.toggle('right', lane === 'a');
 	layoutNarrow();
 	scrollAnchor = null;

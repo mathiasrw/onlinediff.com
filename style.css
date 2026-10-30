@@ -191,6 +191,23 @@ td.result-cell {
 	opacity: 0.3;
 }
 
+/* The icons: thin grey lines, a shade darker under the pointer */
+.emoji-btn svg {
+	display: inline-block;
+	width: 14px;
+	height: 14px;
+	vertical-align: -2px;
+	fill: none;
+	stroke: #777;
+	stroke-width: 1.3;
+	stroke-linecap: round;
+	stroke-linejoin: round;
+	transition: stroke 0.2s;
+}
+.emoji-btn:hover svg {
+	stroke: #333;
+}
+
 #scroll-lock {
 	margin-left: 2em;
 }
@@ -236,8 +253,11 @@ td.result-cell {
 	opacity: 1;
 }
 
-/* Which copy of the site this is: bottom right, where the i is on the left */
+/* Which copy of the site this is: bottom right, where the i is on the left.
+   It leads to the source. */
 #version {
+	text-decoration: none;
+	transition: color 0.2s, opacity 0.2s;
 	position: absolute;
 	right: 10px;
 	bottom: 3px;
@@ -247,6 +267,75 @@ td.result-cell {
 	opacity: 0.7;
 	user-select: none;
 	-webkit-user-select: none;
+}
+#version:hover {
+	color: cornflowerblue;
+	opacity: 1;
+}
+.source.open {
+	color: cornflowerblue;
+	border-color: cornflowerblue;
+	opacity: 1;
+}
+
+/* What the i opens: a small card over the bottom left corner */
+#about-box {
+	position: fixed;
+	left: 8px;
+	bottom: 22px;
+	z-index: 20;
+	box-sizing: border-box;
+	width: 340px;
+	max-width: calc(100vw - 16px);
+	padding: 12px 14px;
+	background: #fff;
+	color: #444;
+	font-size: 11px;
+	line-height: 1.6;
+	border-radius: 6px;
+	box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08), 0 6px 24px rgba(0, 0, 0, 0.12);
+	animation: tip-in 0.12s ease-out;
+}
+#about-box[hidden] {
+	display: none;
+}
+#about-box p + p {
+	margin-top: 0.8em;
+}
+
+/* A hint: quiet, small, and quick to come */
+#tip {
+	position: fixed;
+	z-index: 30;
+	max-width: 360px;
+	padding: 4px 8px;
+	background: rgba(40, 40, 40, 0.92);
+	color: #f2f2f2;
+	font-size: 11px;
+	line-height: 1.5;
+	border-radius: 4px;
+	pointer-events: none;
+	white-space: normal;
+	animation: tip-in 0.1s ease-out;
+}
+#tip[hidden] {
+	display: none;
+}
+#tip kbd {
+	display: inline-block;
+	min-width: 1.3em;
+	margin-left: 6px;
+	padding: 0 4px;
+	box-sizing: border-box;
+	text-align: center;
+	font: inherit;
+	line-height: 1.4;
+	color: #fff;
+	border: 1px solid rgba(255, 255, 255, 0.3);
+	border-radius: 3px;
+}
+@keyframes tip-in {
+	from { opacity: 0; }
 }
 
 
@@ -360,6 +449,8 @@ body:has(td.result-cell:hover) .knob.inner > span {
 #knob-ia > span { transform: translateX(1px); }
 #knob-ib > span { transform: translateX(3px); }
 #knob-ia:hover > span { transform: translateX(-1px); }
+/* The right one by the minimap is not there at all until the pointer is */
+#knob-ib:not(:hover) > span { background: transparent; }
 #knob-ib:hover > span { transform: none; }
 .knob svg {
 	width: 6px;
