@@ -41,12 +41,7 @@
 	<span id="compare-mode" class="emoji-btn disabled" data-tip="Toggle compare mode [Press 7]" aria-label="Toggle compare mode"><span><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="2.2"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2"/></svg></span></span>
 </div>
 
-<a href="#" id="about" class="source" data-tip="About Online Diff" aria-label="About Online Diff" aria-expanded="false" aria-controls="about-box">i</a>
-<div id="about-box" hidden>
-	<p>I got really tired of always having to search for a tool to compare text online and having to click a few times to find one that gave me clarity - so I got a memorable domain and made the tool I would be looking for myself. No tracking. No watermarks. No ads.</p>
-	<p>Enjoy...</p>
-	<p>@rangelwulff</p>
-</div>
+<a href="#" id="about" class="source" data-tip="About Online Diff" aria-label="About Online Diff">i</a>
 <div id="tip" role="tooltip" hidden></div>
 <a id="version" href="https://github.com/mathiasrw/onlinediff.com" target="_blank" rel="noopener" data-tip="Source on GitHub">v1.5.1</a>
 <span id="knob-a" class="knob" data-tip="Hide left side a bit to give more room. [Press 8]"><span><svg viewBox="0 0 6 10" aria-hidden="true"><path d="M4.5 1.5L1.5 5L4.5 8.5"/></svg></span></span>
@@ -1176,11 +1171,6 @@ document.addEventListener('keydown', function(e) {
 	if (e.metaKey || e.ctrlKey || e.altKey) return;
 	// Esc leaves the text box so the number shortcuts take over again
 	if (e.key === 'Escape' || e.key === 'Esc') {
-		if (!aboutBox.hidden) {
-			showAbout(false);
-			e.preventDefault();
-			return;
-		}
 		var el = document.activeElement;
 		if (isTyping(el)) {
 			el.blur();
@@ -1202,28 +1192,23 @@ document.addEventListener('keydown', function(e) {
 	if (e.key === '9') { knobs.b.click(); }
 });
 
-// About: the i opens and closes a box over the corner. A click anywhere else
-// or Esc closes it too.
+// About
 var about = document.getElementById('about');
-var aboutBox = document.getElementById('about-box');
-function showAbout(show) {
-	aboutBox.hidden = !show;
-	about.setAttribute('aria-expanded', show);
-	about.classList.toggle('open', show);
-}
 about.onclick = function() {
-	showAbout(aboutBox.hidden);
+	alert('I got really tired of always having to search for a tool to compare text online and having to click a few times to find one that gave me clarity - so I got a memorable domain and made the tool I would be looking for myself. No tracking. No watermarks. No ads.\n\nEnjoy...\n\n@rangelwulff');
 	return false;
 };
-document.addEventListener('pointerdown', function(e) {
-	if (!aboutBox.hidden && !aboutBox.contains(e.target) && e.target !== about) showAbout(false);
-});
 
 // Hints: our own, as the browser's take a second to come and look out of
 // place. Anything with a data-tip gets one, shown above it, a "[Press 5]" at
 // the end as a key. Moving from one to the next shows the next straight away.
 var tip = document.getElementById('tip');
 var tipFor = null, tipTimer = null, tipShownAt = 0;
+
+// A knob that has been clicked once is known, its hint is not needed again.
+// Kept apart from the texts and settings, by the id of each knob.
+var knobsKnown = {};
+try { knobsKnown = JSON.parse(localStorage.getItem('knobsKnown')) || {}; } catch (e) {}
 
 function showTip(el) {
 	var text = el.dataset.tip, key = /\s*\[Press (.+)\]$/.exec(text);
@@ -1266,7 +1251,7 @@ document.addEventListener('mouseover', function(e) {
 	var el = e.target.closest && e.target.closest('[data-tip]');
 	if (el === tipFor) return;
 	hideTip();
-	if (!el || (el === about && !aboutBox.hidden)) return;
+	if (!el || knobsKnown[el.id]) return;
 	// Straight away if one was just showing, else after a short moment
 	tipTimer = setTimeout(function() { showTip(el); }, Date.now() - tipShownAt < 300 ? 0 : 250);
 });
@@ -1275,7 +1260,13 @@ document.addEventListener('pointerdown', hideTip);
 // A click on a toggle may change what it says: say it again, now that it has
 document.addEventListener('click', function(e) {
 	var el = e.target.closest && e.target.closest('[data-tip]');
-	if (el && el !== about && el.matches(':hover') && el.getClientRects().length) showTip(el);
+	if (!el) return;
+	// Clicked with the pointer, not by its key
+	if (el.classList.contains('knob') && e.detail) {
+		knobsKnown[el.id] = true;
+		try { localStorage.setItem('knobsKnown', JSON.stringify(knobsKnown)); } catch (err) {}
+	}
+	if (el !== about && !knobsKnown[el.id] && el.matches(':hover') && el.getClientRects().length) showTip(el);
 });
 document.addEventListener('keydown', function() { if (tipFor) hideTip(); });
 document.documentElement.addEventListener('mouseleave', hideTip);
@@ -1379,7 +1370,7 @@ function setNarrow(lane) {
 	var back = lane === 'a' ? 'Show the left side again.' : 'Show the right side again.';
 	knobs.a.dataset.tip = (lane ? back : 'Hide left side a bit to give more room.') + ' [Press 8]';
 	knobs.b.dataset.tip = (lane ? back : 'Hide right side a bit to give more room.') + ' [Press 9]';
-	knobBack.dataset.tip = back;
+	knobBack.dataset.tip = back + (lane === 'a' ? ' [Press 8]' : ' [Press 9]');
 	knobBack.classList.toggle('right', lane === 'a');
 	layoutNarrow();
 	scrollAnchor = null;

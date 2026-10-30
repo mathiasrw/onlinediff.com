@@ -272,37 +272,6 @@ td.result-cell {
 	color: cornflowerblue;
 	opacity: 1;
 }
-.source.open {
-	color: cornflowerblue;
-	border-color: cornflowerblue;
-	opacity: 1;
-}
-
-/* What the i opens: a small card over the bottom left corner */
-#about-box {
-	position: fixed;
-	left: 8px;
-	bottom: 22px;
-	z-index: 20;
-	box-sizing: border-box;
-	width: 340px;
-	max-width: calc(100vw - 16px);
-	padding: 12px 14px;
-	background: #fff;
-	color: #444;
-	font-size: 11px;
-	line-height: 1.6;
-	border-radius: 6px;
-	box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08), 0 6px 24px rgba(0, 0, 0, 0.12);
-	animation: tip-in 0.12s ease-out;
-}
-#about-box[hidden] {
-	display: none;
-}
-#about-box p + p {
-	margin-top: 0.8em;
-}
-
 /* A hint: quiet, small, and quick to come */
 #tip {
 	position: fixed;
