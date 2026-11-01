@@ -43,7 +43,7 @@
 
 <a href="#" id="about" class="source" aria-label="About Online Diff">i</a>
 <div id="tip" role="tooltip" hidden></div>
-<a id="version" href="https://github.com/mathiasrw/onlinediff.com" target="_blank" rel="noopener">v1.5.3</a>
+<a id="version" href="https://github.com/mathiasrw/onlinediff.com" target="_blank" rel="noopener">v1.5.4</a>
 <span id="knob-a" class="knob" data-tip="Hide left side a bit to give more room. [Press 8]"><span><svg viewBox="0 0 6 10" aria-hidden="true"><path d="M4.5 1.5L1.5 5L4.5 8.5"/></svg></span></span>
 <span id="knob-back" class="knob back" style="display: none"><span><svg viewBox="0 0 6 10" aria-hidden="true"><path d="M4.5 1.5L1.5 5L4.5 8.5"/></svg></span></span>
 <span id="knob-ia" class="knob inner" data-tip="Hide left side a bit to give more room. [Press 8]"><span><svg viewBox="0 0 6 10" aria-hidden="true"><path d="M4.5 1.5L1.5 5L4.5 8.5"/></svg></span></span>
@@ -327,6 +327,12 @@ function startOfLine(text, pos) {
 	return pos > 0 ? text.lastIndexOf('\n', pos - 1) + 1 : 0;
 }
 
+// [start, end) of the line that pos is on, its newline included.
+function lineAround(text, pos) {
+	var s = startOfLine(text, pos), e = text.indexOf('\n', s);
+	return [s, e === -1 ? text.length : e + 1];
+}
+
 // Length of line k, given that it starts at pos and reads as body (the
 // newline is optional, the last line may not have one). -1 if it does not.
 function lineAt(text, starts, k, pos, body) {
@@ -524,13 +530,22 @@ function eachRange(lane, spans, fn) {
 	}
 }
 
-// StaticRange and not Range: the browser has to keep every live Range up to
-// date on each DOM change, and round 2 changes a lot of DOM.
-function addMark(startNode, startOffset, endNode, endOffset) {
-	markHL.add(new StaticRange({
-		startContainer: startNode, startOffset: startOffset,
-		endContainer: endNode, endOffset: endOffset
-	}));
+// The marks on screen, by lane, so that those in the other lanes can be kept
+// up while a new diff is on its way.
+var marked = {a: [], r: [], b: []};
+
+// Mark chars start, end, start, end, ... of the lane's text. StaticRange and
+// not Range: the browser has to keep every live Range up to date on each DOM
+// change, and round 2 changes a lot of DOM.
+function markLane(lane, spans) {
+	eachRange(lane, spans, function(startNode, startOffset, endNode, endOffset) {
+		var range = new StaticRange({
+			startContainer: startNode, startOffset: startOffset,
+			endContainer: endNode, endOffset: endOffset
+		});
+		marked[lane].push(range);
+		markHL.add(range);
+	});
 }
 
 // How far down the screen the char at offset pos of the lane's text is, or
@@ -556,8 +571,9 @@ function rectOf(lane, start, end) {
 function updateMarks() {
 	var align = alignQueued;
 	marksQueued = alignQueued = false;
+	var kept = marked;
+	marked = {a: [], r: [], b: []};
 	markHL.clear();
-	if (!lastDiff) return;
 	var sel = window.getSelection();
 	// While the button is down a click may still turn into a selection, so the
 	// line under the caret waits for it to come up rather than flash yellow.
@@ -568,29 +584,47 @@ function updateMarks() {
 	// is cut off.
 	var from = a.contains(sel.anchorNode) ? 'a' : b.contains(sel.anchorNode) ? 'b' : result.contains(sel.anchorNode) ? 'r' : null;
 	if (!from) return;
+	var range = sel.getRangeAt(0);
+	var root = lanes[from];
+	if (!lastDiff) {
+		// A new diff is on its way, as the text has just been typed in. Until
+		// it is here the marks in the other lanes stay as they were, and the
+		// caret's own line needs no diff to be found, so typing does not make
+		// the yellow blink.
+		for (var k = 0; k < LANES.length; k++) {
+			var lane = LANES[k];
+			if (lane === from) continue;
+			marked[lane] = kept[lane];
+			kept[lane].forEach(function(r) { markHL.add(r); });
+		}
+		// The result is not typed in, and its text can not be counted in
+		// without the diff it is made of
+		if (from !== 'r' && sel.isCollapsed && root.contains(range.startContainer)) {
+			var line = lineAround(root.textContent, laneOffset(from, range.startContainer, range.startOffset));
+			if (line[1] > line[0]) markLane(from, line);
+		}
+		return;
+	}
 	if (laneMap === undefined) {
 		var mapStarted = performance.now();
 		laneMap = buildLaneMap(lastDiff, a.textContent, b.textContent, window.diffType === 'diffPatch');
 		log(diffGen, 'page: map for marking text built in ' + ms(mapStarted) + (laneMap ? '' : ' - it did not check out, no marks'));
 	}
 	if (!laneMap) return;
-	var range = sel.getRangeAt(0);
-	var root = lanes[from];
 	var s = root.contains(range.startContainer) ? laneOffset(from, range.startContainer, range.startOffset) : 0;
 	var e = root.contains(range.endContainer) ? laneOffset(from, range.endContainer, range.endOffset) : Infinity;
 	if (sel.isCollapsed) {
 		// Compare mode: the line the caret is on, as if it were selected
-		var text = root.textContent;
-		s = startOfLine(text, s);
-		e = text.indexOf('\n', s);
-		e = e === -1 ? text.length : e + 1;
+		var line = lineAround(root.textContent, s);
+		s = line[0];
+		e = line[1];
 	}
 	var spans = mapSelection(laneMap, from, s, e);
 	for (var j = 0; j < LANES.length; j++) {
-		if (spans[LANES[j]].length) eachRange(LANES[j], spans[LANES[j]], addMark);
+		if (spans[LANES[j]].length) markLane(LANES[j], spans[LANES[j]]);
 	}
 	// A caret has no selection to show where it is, so its line is marked too
-	if (sel.isCollapsed && e > s) eachRange(from, [s, e], addMark);
+	if (sel.isCollapsed && e > s) markLane(from, [s, e]);
 	if (!align) return;
 	alignMarks(from, spans);
 	if (narrowLane && narrowLane !== from && spans[narrowLane].length) {
