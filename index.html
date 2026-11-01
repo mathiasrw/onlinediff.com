@@ -41,9 +41,9 @@
 	<span id="compare-mode" class="emoji-btn" data-tip="Toggle compare mode [Press 7]" aria-label="Toggle compare mode"><span><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="2.2"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2"/></svg></span></span>
 </div>
 
-<a href="#" id="about" class="source" data-tip="About Online Diff" aria-label="About Online Diff">i</a>
+<a href="#" id="about" class="source" aria-label="About Online Diff">i</a>
 <div id="tip" role="tooltip" hidden></div>
-<a id="version" href="https://github.com/mathiasrw/onlinediff.com" target="_blank" rel="noopener" data-tip="Source on GitHub">v1.5.2</a>
+<a id="version" href="https://github.com/mathiasrw/onlinediff.com" target="_blank" rel="noopener">v1.5.3</a>
 <span id="knob-a" class="knob" data-tip="Hide left side a bit to give more room. [Press 8]"><span><svg viewBox="0 0 6 10" aria-hidden="true"><path d="M4.5 1.5L1.5 5L4.5 8.5"/></svg></span></span>
 <span id="knob-back" class="knob back" style="display: none"><span><svg viewBox="0 0 6 10" aria-hidden="true"><path d="M4.5 1.5L1.5 5L4.5 8.5"/></svg></span></span>
 <span id="knob-ia" class="knob inner" data-tip="Hide left side a bit to give more room. [Press 8]"><span><svg viewBox="0 0 6 10" aria-hidden="true"><path d="M4.5 1.5L1.5 5L4.5 8.5"/></svg></span></span>
@@ -1233,8 +1233,6 @@ function showTip(el) {
 		var line = el.firstChild.getBoundingClientRect();
 		y = line.top + line.height / 2 - h / 2;
 		x = line.left > document.documentElement.clientWidth / 2 ? line.left - w - 8 : line.right + 8;
-	} else if (el === minimap) {
-		y = lastTipY - h - 10;
 	}
 	tip.style.left = x + 'px';
 	tip.style.top = Math.max(4, y) + 'px';
@@ -1249,7 +1247,6 @@ function hideTip() {
 	tipFor = null;
 }
 
-var lastTipY = 0;
 document.addEventListener('mouseover', function(e) {
 	var el = e.target.closest && e.target.closest('[data-tip]');
 	if (el === tipFor) return;
@@ -1258,7 +1255,6 @@ document.addEventListener('mouseover', function(e) {
 	// Straight away if one was just showing, else after a short moment
 	tipTimer = setTimeout(function() { showTip(el); }, Date.now() - tipShownAt < 300 ? 0 : 250);
 });
-document.addEventListener('mousemove', function(e) { lastTipY = e.clientY; }, {passive: true});
 document.addEventListener('pointerdown', hideTip);
 // A click on a toggle may change what it says: say it again, now that it has
 document.addEventListener('click', function(e) {
@@ -1269,7 +1265,7 @@ document.addEventListener('click', function(e) {
 		knobsKnown[el.id] = true;
 		try { localStorage.setItem('knobsKnown', JSON.stringify(knobsKnown)); } catch (err) {}
 	}
-	if (el !== about && !knobsKnown[el.id] && el.matches(':hover') && el.getClientRects().length) showTip(el);
+	if (!knobsKnown[el.id] && el.matches(':hover') && el.getClientRects().length) showTip(el);
 });
 document.addEventListener('keydown', function() { if (tipFor) hideTip(); });
 document.documentElement.addEventListener('mouseleave', hideTip);
