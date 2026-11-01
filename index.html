@@ -38,12 +38,12 @@
 	<label data-tip="[Press 4]"><input type="radio" name="diff_type" value="diffPatch"> Patch</label>
 	<span id="scroll-lock" class="emoji-btn" data-tip="Toggle scroll sync [Press 5]" aria-label="Toggle scroll sync"><span><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6.8 9.2a2.8 2.8 0 0 0 4 0l2.2-2.2a2.8 2.8 0 0 0-4-4l-.7.7"/><path d="M9.2 6.8a2.8 2.8 0 0 0-4 0L3 9a2.8 2.8 0 0 0 4 4l.7-.7"/></svg></span></span>
 	<span id="line-break-toggle" class="emoji-btn" data-tip="Toggle line breaks [Press 6]" aria-label="Toggle line breaks"><span><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 3.5h11"/><path d="M2.5 8h9a2.25 2.25 0 0 1 0 4.5H8"/><path d="M9.5 11L8 12.5L9.5 14"/><path d="M2.5 12.5h3"/></svg></span></span>
-	<span id="compare-mode" class="emoji-btn disabled" data-tip="Toggle compare mode [Press 7]" aria-label="Toggle compare mode"><span><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="2.2"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2"/></svg></span></span>
+	<span id="compare-mode" class="emoji-btn" data-tip="Toggle compare mode [Press 7]" aria-label="Toggle compare mode"><span><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="2.2"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2"/></svg></span></span>
 </div>
 
 <a href="#" id="about" class="source" data-tip="About Online Diff" aria-label="About Online Diff">i</a>
 <div id="tip" role="tooltip" hidden></div>
-<a id="version" href="https://github.com/mathiasrw/onlinediff.com" target="_blank" rel="noopener" data-tip="Source on GitHub">v1.5.1</a>
+<a id="version" href="https://github.com/mathiasrw/onlinediff.com" target="_blank" rel="noopener" data-tip="Source on GitHub">v1.5.2</a>
 <span id="knob-a" class="knob" data-tip="Hide left side a bit to give more room. [Press 8]"><span><svg viewBox="0 0 6 10" aria-hidden="true"><path d="M4.5 1.5L1.5 5L4.5 8.5"/></svg></span></span>
 <span id="knob-back" class="knob back" style="display: none"><span><svg viewBox="0 0 6 10" aria-hidden="true"><path d="M4.5 1.5L1.5 5L4.5 8.5"/></svg></span></span>
 <span id="knob-ia" class="knob inner" data-tip="Hide left side a bit to give more room. [Press 8]"><span><svg viewBox="0 0 6 10" aria-hidden="true"><path d="M4.5 1.5L1.5 5L4.5 8.5"/></svg></span></span>
@@ -57,7 +57,7 @@
 No ads, no tracking, no BS. 
 
 See the diff per char, word, line, or get the patch.</div></td>
-		<td class="result-cell"><div style="padding-top: 10px;"><pre id="result"></pre></div><div id="minimap" data-tip="Change overview"></div></td>
+		<td class="result-cell"><div style="padding-top: 10px;"><pre id="result"></pre></div><div id="minimap"></div></td>
 		<td><div contenteditable="true" id="b">Highlight the differences between two texts. 
 
 No ads, no tracking, no BS. 
@@ -85,7 +85,9 @@ function loadFromStorage() {
 		}
 		if (data.scrollLock === false) document.getElementById('scroll-lock').click();
 		if (data.lineBreak === false) document.getElementById('line-break-toggle').click();
-		if (data.compare === true) document.getElementById('compare-mode').click();
+		// On unless turned off. Under a name of its own, as "compare" was saved as
+		// off for everyone while off was the default
+		if (data.compareMode === false) document.getElementById('compare-mode').click();
 		if (data.narrow === 'a' || data.narrow === 'b') setNarrow(data.narrow);
 	} catch(e) {}
 }
@@ -99,7 +101,7 @@ function saveToStorage() {
 			diffType: checked ? checked.value : 'diffWords',
 			scrollLock: scrollLockEnabled,
 			lineBreak: lineBreakEnabled,
-			compare: compareEnabled,
+			compareMode: compareEnabled,
 			narrow: narrowLane
 		};
 		localStorage.setItem('diffData', JSON.stringify(data));
@@ -701,13 +703,14 @@ function onPointerUp() {
 	pointerDown = false;
 	var sel = window.getSelection();
 	if (sel && sel.isCollapsed) {
-		// A click, not a drag: give a second click time to come
+		// A click, not a drag: give a second click time to come. Should it come,
+		// the button is down again when this runs and nothing is marked.
 		clickHeld = true;
 		clearTimeout(clickTimer);
 		clickTimer = setTimeout(function() {
 			clickHeld = false;
 			queueMarks(true);
-		}, 250);
+		}, 180);
 	}
 	queueMarks(true);
 }
@@ -1326,7 +1329,7 @@ lineBreakToggle.onclick = function() {
 // Compare mode: with nothing selected, the line the caret is on is marked in
 // the other two lanes and lined up with them, as if it were selected. It
 // follows the caret. Selecting something marks that instead, as before.
-var compareEnabled = false;
+var compareEnabled = true;
 var compareToggle = document.getElementById('compare-mode');
 
 compareToggle.onclick = function() {
