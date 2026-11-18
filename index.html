@@ -43,7 +43,8 @@
 
 <a href="#" id="about" class="source" aria-label="About Online Diff">i</a>
 <div id="tip" role="tooltip" hidden></div>
-<a id="version" href="https://github.com/mathiasrw/onlinediff.com" target="_blank" rel="noopener">v1.5.4</a>
+<dialog id="dump"><textarea readonly spellcheck="false"></textarea><div><button id="dump-copy">Copy</button><button id="dump-close">Close</button></div></dialog>
+<a id="version" href="https://github.com/mathiasrw/onlinediff.com" target="_blank" rel="noopener">v1.5.5</a>
 <span id="knob-a" class="knob" data-tip="Hide left side a bit to give more room. [Press 8]"><span><svg viewBox="0 0 6 10" aria-hidden="true"><path d="M4.5 1.5L1.5 5L4.5 8.5"/></svg></span></span>
 <span id="knob-back" class="knob back" style="display: none"><span><svg viewBox="0 0 6 10" aria-hidden="true"><path d="M4.5 1.5L1.5 5L4.5 8.5"/></svg></span></span>
 <span id="knob-ia" class="knob inner" data-tip="Hide left side a bit to give more room. [Press 8]"><span><svg viewBox="0 0 6 10" aria-hidden="true"><path d="M4.5 1.5L1.5 5L4.5 8.5"/></svg></span></span>
@@ -156,6 +157,14 @@ function setBusy(on, delay) {
 	}
 }
 
+// The text of a box as the diff sees it. A box that has been emptied is left
+// holding a lone newline by the browser, which would diff as a deleted or
+// added blank line against a box that is truly empty. Count it as empty.
+function laneText(el) {
+	var text = el.textContent;
+	return text === '\n' ? '' : text;
+}
+
 // wait: how long the text has to be left alone before the diff is started.
 function requestDiff(wait) {
 	diffGen++;
@@ -186,8 +195,8 @@ function requestDiff(wait) {
 			gen: diffGen,
 			log: diffGen === logGen,
 			diffType: window.diffType,
-			textA: a.textContent,
-			textB: b.textContent
+			textA: laneText(a),
+			textB: laneText(b)
 		});
 	}, wait);
 }
@@ -607,7 +616,7 @@ function updateMarks() {
 	}
 	if (laneMap === undefined) {
 		var mapStarted = performance.now();
-		laneMap = buildLaneMap(lastDiff, a.textContent, b.textContent, window.diffType === 'diffPatch');
+		laneMap = buildLaneMap(lastDiff, laneText(a), laneText(b), window.diffType === 'diffPatch');
 		log(diffGen, 'page: map for marking text built in ' + ms(mapStarted) + (laneMap ? '' : ' - it did not check out, no marks'));
 	}
 	if (!laneMap) return;
@@ -811,32 +820,36 @@ function renderMinimap() {
 	minimap.appendChild(frag);
 }
 
+// A click on the minimap goes to the change nearest to it, as if that change
+// had been clicked in the result: it is marked, and the lanes line up on it.
+// A caret on it marks its line, like a click does in compare mode; with that
+// off the change itself is selected, so there is still something marked.
 minimap.addEventListener('click', function(e) {
-	var rect = minimap.getBoundingClientRect();
-	var pct = (e.clientY - rect.top) / rect.height;
-	var contentY = pct * resultScroller.scrollHeight;
-	var maxY = resultScroller.scrollHeight - resultScroller.clientHeight;
-	resultScroller.scrollTop = Math.max(0, Math.min(maxY, contentY - resultScroller.clientHeight / 2));
-
-	// Also center horizontally on the nearest mark
 	var marks = result.querySelectorAll('ins, del');
-	if (marks.length) {
-		var sr = resultScroller.getBoundingClientRect();
-		var nearest = null, bestDist = Infinity;
-		for (var i = 0; i < marks.length; i++) {
-			var mr = marks[i].getBoundingClientRect();
-			var mTop = (mr.top - sr.top) + resultScroller.scrollTop;
-			var d = Math.abs(mTop - contentY);
-			if (d < bestDist) { bestDist = d; nearest = marks[i]; }
-		}
-		if (nearest) {
-			var nr = nearest.getBoundingClientRect();
-			var mLeft = (nr.left - sr.left) + resultScroller.scrollLeft;
-			var maxX = resultScroller.scrollWidth - resultScroller.clientWidth;
-			resultScroller.scrollLeft = Math.max(0, Math.min(maxX, mLeft - resultScroller.clientWidth / 2));
-		}
+	if (!marks.length) return;
+	var rect = minimap.getBoundingClientRect();
+	var contentY = (e.clientY - rect.top) / rect.height * resultScroller.scrollHeight;
+	var sr = resultScroller.getBoundingClientRect();
+	var nearest = null, nearestTop = 0, bestDist = Infinity;
+	for (var i = 0; i < marks.length; i++) {
+		var mr = marks[i].getBoundingClientRect();
+		var mTop = (mr.top - sr.top) + resultScroller.scrollTop;
+		var d = Math.abs(mTop - contentY);
+		if (d < bestDist) { bestDist = d; nearest = marks[i]; nearestTop = mTop; }
 	}
+	// The change in the middle of the result, both ways
+	var nr = nearest.getBoundingClientRect();
+	var mLeft = (nr.left - sr.left) + resultScroller.scrollLeft;
+	var maxY = resultScroller.scrollHeight - resultScroller.clientHeight;
+	var maxX = resultScroller.scrollWidth - resultScroller.clientWidth;
+	resultScroller.scrollTop = Math.max(0, Math.min(maxY, nearestTop - resultScroller.clientHeight / 2));
+	resultScroller.scrollLeft = Math.max(0, Math.min(maxX, mLeft - resultScroller.clientWidth / 2));
 	syncScroll(resultScroller);
+	// Put the selection on it. The marks and the lining up follow from the
+	// selection change, the same way as after a click in the result.
+	var text = nearest.firstChild;
+	if (!text) return;
+	window.getSelection().setBaseAndExtent(text, 0, text, compareEnabled ? 0 : text.length);
 });
 
 // Wheel scrolling is done here and not left to the browser. Left alone, the
@@ -1235,6 +1248,96 @@ about.onclick = function() {
 	alert('I got really tired of always having to search for a tool to compare text online and having to click a few times to find one that gave me clarity - so I got a memorable domain and made the tool I would be looking for myself. No tracking. No watermarks. No ads.\n\nEnjoy...\n\n@rangelwulff');
 	return false;
 };
+
+// State dump: command or ctrl click on the version number opens a box with
+// everything the page knows, as JSON, to paste into a bug report. The texts
+// and settings are enough to put the page back as it was, and the scroll
+// positions, selection and marks say what was on screen at the time.
+var dump = document.getElementById('dump');
+var dumpText = dump.querySelector('textarea');
+
+// The marks of a lane as char offsets into its text
+function markOffsets(lane) {
+	return marked[lane].map(function(r) {
+		return [laneOffset(lane, r.startContainer, r.startOffset), laneOffset(lane, r.endContainer, r.endOffset)];
+	});
+}
+
+function panelState(j) {
+	var p = scrollPanels[j], r = p.getBoundingClientRect();
+	return {
+		scrollTop: p.scrollTop, scrollLeft: p.scrollLeft,
+		scrollHeight: p.scrollHeight, scrollWidth: p.scrollWidth,
+		clientHeight: p.clientHeight, clientWidth: p.clientWidth,
+		rect: [r.left, r.top, r.width, r.height]
+	};
+}
+
+function stateDump() {
+	var sel = window.getSelection(), selection = null;
+	if (sel && sel.rangeCount) {
+		var from = a.contains(sel.anchorNode) ? 'a' : b.contains(sel.anchorNode) ? 'b' : result.contains(sel.anchorNode) ? 'r' : null;
+		selection = {lane: from, collapsed: sel.isCollapsed, text: sel.toString().slice(0, 500)};
+		if (from && lanes[from].contains(sel.focusNode) && (from !== 'r' || laneMap)) {
+			try {
+				selection.anchor = laneOffset(from, sel.anchorNode, sel.anchorOffset);
+				selection.focus = laneOffset(from, sel.focusNode, sel.focusOffset);
+			} catch (e) { selection.error = String(e); }
+		}
+	}
+	var marks = {};
+	try { LANES.forEach(function(lane) { marks[lane] = laneMap ? markOffsets(lane) : marked[lane].length; }); } catch (e) { marks.error = String(e); }
+	var checked = document.querySelector('#settings [name="diff_type"]:checked');
+	return {
+		version: document.getElementById('version').textContent,
+		time: new Date().toISOString(),
+		browser: navigator.userAgent,
+		platform: navigator.platform,
+		viewport: [window.innerWidth, window.innerHeight],
+		devicePixelRatio: window.devicePixelRatio,
+		highlightApi: !!markHL,
+		settings: {
+			diffType: checked ? checked.value : null,
+			scrollLock: scrollLockEnabled,
+			lineBreak: lineBreakEnabled,
+			compareMode: compareEnabled,
+			narrow: narrowLane,
+			narrowShift: narrowShift
+		},
+		texts: {a: a.textContent, b: b.textContent},
+		lanes: {a: panelState(0), r: panelState(1), b: panelState(2)},
+		minimap: {marks: minimap.childNodes.length, height: minimap.clientHeight},
+		diff: {
+			gen: diffGen, busy: diffBusy, onScreen: !!lastDiff,
+			parts: lastDiff ? lastDiff.length : null,
+			resultNodes: diffNodes.length,
+			laneMap: laneMap === undefined ? 'not built' : laneMap ? 'ok' : 'did not check out',
+			refining: refineBusy
+		},
+		scrollAnchor: scrollAnchor,
+		selection: selection,
+		marks: marks,
+		active: document.activeElement ? document.activeElement.id || document.activeElement.tagName : null,
+		storage: (function() { try { return {diffData: !!localStorage.getItem('diffData'), knobsKnown: knobsKnown}; } catch (e) { return String(e); } })()
+	};
+}
+
+document.getElementById('version').addEventListener('click', function(e) {
+	if (!(e.metaKey || e.ctrlKey)) return;
+	e.preventDefault();
+	var text;
+	try { text = JSON.stringify(stateDump(), null, 2); } catch (err) { text = 'Could not read the state: ' + err; }
+	dumpText.value = text;
+	dump.showModal();
+	dumpText.focus();
+	dumpText.select();
+});
+document.getElementById('dump-copy').onclick = function() {
+	dumpText.select();
+	if (navigator.clipboard) navigator.clipboard.writeText(dumpText.value);
+	else document.execCommand('copy');
+};
+document.getElementById('dump-close').onclick = function() { dump.close(); };
 
 // Hints: our own, as the browser's take a second to come and look out of
 // place. Anything with a data-tip gets one, shown above it, a "[Press 5]" at

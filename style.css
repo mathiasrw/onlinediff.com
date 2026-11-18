@@ -272,6 +272,34 @@ td.result-cell {
 	color: cornflowerblue;
 	opacity: 1;
 }
+/* The state dump behind a command click on the version number */
+#dump {
+	width: 80vw;
+	max-width: 900px;
+	height: 80vh;
+	margin: auto;
+	padding: 10px;
+	border: 1px solid #ccc;
+	border-radius: 6px;
+	box-sizing: border-box;
+	display: none;
+	flex-direction: column;
+	gap: 8px;
+}
+#dump[open] {
+	display: flex;
+}
+#dump textarea {
+	flex: 1;
+	resize: none;
+	font: 11px/1.4 Menlo, Monaco, Consolas, monospace;
+	white-space: pre;
+}
+#dump > div {
+	display: flex;
+	justify-content: flex-end;
+	gap: 8px;
+}
 /* A hint: quiet, small, and quick to come */
 #tip {
 	position: fixed;
