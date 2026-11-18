@@ -43,8 +43,9 @@
 
 <a href="#" id="about" class="source" aria-label="About Online Diff">i</a>
 <div id="tip" role="tooltip" hidden></div>
+<div id="revert-box" hidden></div>
 <dialog id="dump"><textarea readonly spellcheck="false"></textarea><div><button id="dump-copy">Copy</button><button id="dump-close">Close</button></div></dialog>
-<a id="version" href="https://github.com/mathiasrw/onlinediff.com" target="_blank" rel="noopener">v1.5.5</a>
+<a id="version" href="https://github.com/mathiasrw/onlinediff.com" target="_blank" rel="noopener">v1.6.0</a>
 <span id="knob-a" class="knob" data-tip="Hide left side a bit to give more room. [Press 8]"><span><svg viewBox="0 0 6 10" aria-hidden="true"><path d="M4.5 1.5L1.5 5L4.5 8.5"/></svg></span></span>
 <span id="knob-back" class="knob back" style="display: none"><span><svg viewBox="0 0 6 10" aria-hidden="true"><path d="M4.5 1.5L1.5 5L4.5 8.5"/></svg></span></span>
 <span id="knob-ia" class="knob inner" data-tip="Hide left side a bit to give more room. [Press 8]"><span><svg viewBox="0 0 6 10" aria-hidden="true"><path d="M4.5 1.5L1.5 5L4.5 8.5"/></svg></span></span>
@@ -852,6 +853,165 @@ minimap.addEventListener('click', function(e) {
 	window.getSelection().setBaseAndExtent(text, 0, text, compareEnabled ? 0 : text.length);
 });
 
+// Revert a change: command (ctrl) click on an added or removed part of the
+// result puts B back as A has it there. The part and the changed parts next
+// to it go together, as a changed word shows as an added and a removed part
+// side by side and either one alone would leave half the change behind. Done
+// as an edit of B, so undo takes it back and the caret ends up on the spot.
+var isMac = /Mac|iPhone|iPad/.test(navigator.platform);
+var revertKey = isMac ? 'Meta' : 'Control';
+
+function revertHeld(e) {
+	return isMac ? e.metaKey : e.ctrlKey;
+}
+
+function revertChange(node) {
+	if (!lastDiff) return;
+	if (laneMap === undefined) laneMap = buildLaneMap(lastDiff, laneText(a), laneText(b), window.diffType === 'diffPatch');
+	if (!laneMap) return;
+	var run = changeRun(node);
+	if (!run.length) return;
+	var from = diffNodes.indexOf(run[0]), to = from + run.length - 1;
+	// The segments inside the run, and with them where it is in A and in B.
+	// A run that is only removed text has an empty stretch in B: the spot
+	// where the text goes back in.
+	var m = laneMap, r0 = m.n[2 * from], r1 = m.n[2 * to + 1];
+	var aStart = -1, aEnd = -1, bStart = -1, bEnd = -1;
+	for (var k = firstPairAfter(m.r, r0); 2 * k < m.r.length && m.r[2 * k] < r1; k++) {
+		if (aStart < 0) { aStart = m.a[2 * k]; bStart = m.b[2 * k]; }
+		aEnd = m.a[2 * k + 1];
+		bEnd = m.b[2 * k + 1];
+	}
+	if (aStart < 0) return;
+	var text = a.textContent.slice(aStart, aEnd);
+	b.focus();
+	selectText(b, bStart, bEnd);
+	leaveChange();
+	if (text) insertText(text); else document.execCommand('delete');
+	changed();
+	selectText(b, bStart + text.length);
+}
+
+result.addEventListener('mousedown', function(e) {
+	// Not a place to start a selection while the key is down
+	if (revertHeld(e) && e.target.closest && e.target.closest('ins, del')) e.preventDefault();
+});
+result.addEventListener('click', function(e) {
+	if (!revertHeld(e)) return;
+	var node = e.target.closest && e.target.closest('ins, del');
+	if (!node || node.parentNode !== result) return;
+	e.preventDefault();
+	revertChange(node);
+});
+
+// The run of changed parts the node is part of: a changed word is an added
+// and a removed part side by side, and they go together.
+function changeRun(node) {
+	var i = diffNodes.indexOf(node);
+	if (i < 0 || !lastDiff) return [];
+	var from = i, to = i;
+	while (from > 0 && (lastDiff[from - 1].added || lastDiff[from - 1].removed)) from--;
+	while (to + 1 < lastDiff.length && (lastDiff[to + 1].added || lastDiff[to + 1].removed)) to++;
+	return diffNodes.slice(from, to + 1);
+}
+
+// While the key is down the result shows it: an arrow pointer instead of the
+// text cursor, and over a change a go-back pointer, one box round the whole
+// change and a hint above it. The hint is the bottom bar's, so it looks the
+// same. The box is drawn over the change rather than as a border on its
+// parts, so a changed word gets one box and not two meeting in the middle.
+var revertHover = [];
+var revertBox = document.getElementById('revert-box');
+var pointerX = 0, pointerY = 0;
+
+function placeRevertBox() {
+	var box = null;
+	for (var i = 0; i < revertHover.length; i++) {
+		var rects = revertHover[i].getClientRects();
+		for (var j = 0; j < rects.length; j++) {
+			var r = rects[j];
+			if (!r.width) continue;
+			if (!box) {
+				box = {left: r.left, top: r.top, right: r.right, bottom: r.bottom};
+			} else {
+				box.left = Math.min(box.left, r.left);
+				box.top = Math.min(box.top, r.top);
+				box.right = Math.max(box.right, r.right);
+				box.bottom = Math.max(box.bottom, r.bottom);
+			}
+		}
+	}
+	if (!box) return null;
+	// Only the part of it that is in view
+	var view = resultScroller.getBoundingClientRect();
+	box.left = Math.max(box.left, view.left);
+	box.top = Math.max(box.top, view.top);
+	box.right = Math.min(box.right, view.right);
+	box.bottom = Math.min(box.bottom, view.bottom);
+	if (box.right <= box.left || box.bottom <= box.top) return null;
+	revertBox.style.left = (box.left - 2) + 'px';
+	revertBox.style.top = (box.top - 1) + 'px';
+	revertBox.style.width = (box.right - box.left + 4) + 'px';
+	revertBox.style.height = (box.bottom - box.top + 2) + 'px';
+	revertBox.hidden = false;
+	return new DOMRect(box.left, box.top, box.right - box.left, box.bottom - box.top);
+}
+
+function hoverChange(node) {
+	if (node === revertHover[0]) return;
+	leaveChange();
+	if (!node) return;
+	revertHover = changeRun(node);
+	if (!revertHover.length) return;
+	var box = placeRevertBox();
+	if (!box) { revertHover = []; return; }
+	revertHover[0].dataset.tip = 'Revert change';
+	showTip(revertHover[0], box);
+}
+
+function leaveChange() {
+	revertBox.hidden = true;
+	if (!revertHover.length) return;
+	if (tipFor === revertHover[0]) hideTip();
+	for (var i = 0; i < revertHover.length; i++) delete revertHover[i].dataset.tip;
+	revertHover = [];
+}
+
+// What is under the pointer, for when the key comes down with the pointer
+// already on a change
+function hoverUnderPointer() {
+	var el = document.elementFromPoint(pointerX, pointerY);
+	var node = el && el.closest && el.closest('ins, del');
+	hoverChange(node && node.parentNode === result ? node : null);
+}
+
+function setRevertMode(on) {
+	document.body.classList.toggle('revert', on);
+	if (on) hoverUnderPointer(); else leaveChange();
+}
+result.addEventListener('mouseover', function(e) {
+	if (!document.body.classList.contains('revert')) return;
+	var node = e.target.closest && e.target.closest('ins, del');
+	hoverChange(node && node.parentNode === result ? node : null);
+});
+result.addEventListener('mouseleave', leaveChange);
+// The box and the hint follow the text when it scrolls under the pointer
+resultScroller.addEventListener('scroll', function() {
+	if (!revertHover.length) return;
+	var box = placeRevertBox();
+	if (box) showTip(revertHover[0], box); else leaveChange();
+}, {passive: true});
+document.addEventListener('keydown', function(e) { if (e.key === revertKey) setRevertMode(true); });
+document.addEventListener('keyup', function(e) { if (e.key === revertKey) setRevertMode(false); });
+// The key can go down or up while the window is not listening
+document.addEventListener('mousemove', function(e) {
+	pointerX = e.clientX;
+	pointerY = e.clientY;
+	var on = revertHeld(e);
+	if (on !== document.body.classList.contains('revert')) setRevertMode(on);
+});
+window.addEventListener('blur', function() { setRevertMode(false); });
+
 // Wheel scrolling is done here and not left to the browser. Left alone, the
 // lane under the pointer scrolls at once and the other two only hear of it in
 // a scroll event a frame later - and lanes that are meant to move as one then
@@ -1068,7 +1228,6 @@ function selectText(pane, start, end) {
 // Line editing as in VS Code: Alt+Up/Down (Option on a Mac) moves the lines
 // the selection is on, and cut with nothing selected cuts the whole line.
 // Both go through the browser's own editing, so undo takes them back.
-var isMac = /Mac|iPhone|iPad/.test(navigator.platform);
 var lineCutting = null;  // the line the cut under way is for, set just before it
 var lineCut = null;      // the last line cut, to know it again when it is pasted
 
@@ -1350,7 +1509,8 @@ var tipFor = null, tipTimer = null, tipShownAt = 0;
 var knobsKnown = {};
 try { knobsKnown = JSON.parse(localStorage.getItem('knobsKnown')) || {}; } catch (e) {}
 
-function showTip(el) {
+// rect: where to show it, when not above el itself
+function showTip(el, rect) {
 	var text = el.dataset.tip, key = /\s*\[Press (.+)\]$/.exec(text);
 	tip.textContent = key ? text.slice(0, key.index) : text;
 	if (key) {
@@ -1362,7 +1522,7 @@ function showTip(el) {
 	tip.hidden = false;
 	// Measured in the corner, where it has all the room it wants
 	tip.style.left = tip.style.top = '0';
-	var r = el.getBoundingClientRect(), w = tip.offsetWidth, h = tip.offsetHeight;
+	var r = rect || el.getBoundingClientRect(), w = tip.offsetWidth, h = tip.offsetHeight;
 	var x = Math.max(8, Math.min(document.documentElement.clientWidth - w - 8, r.left + r.width / 2 - w / 2));
 	var y = r.top - h - 6;
 	if (el.classList.contains('knob')) {
@@ -1385,6 +1545,8 @@ function hideTip() {
 }
 
 document.addEventListener('mouseover', function(e) {
+	// Inside an outlined change the hint stays where it is
+	if (revertHover.length && e.target.closest && revertHover.indexOf(e.target.closest('ins, del')) >= 0) return;
 	var el = e.target.closest && e.target.closest('[data-tip]');
 	if (el === tipFor) return;
 	hideTip();
@@ -1404,7 +1566,8 @@ document.addEventListener('click', function(e) {
 	}
 	if (!knobsKnown[el.id] && el.matches(':hover') && el.getClientRects().length) showTip(el);
 });
-document.addEventListener('keydown', function() { if (tipFor) hideTip(); });
+// Not the revert hint: the key that brings it is a key too
+document.addEventListener('keydown', function() { if (tipFor && revertHover.indexOf(tipFor) < 0) hideTip(); });
 document.documentElement.addEventListener('mouseleave', hideTip);
 
 // Scroll sync

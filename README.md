@@ -17,7 +17,10 @@ storage so they are still there next time.
 - Compare mode marks the line the cursor is on in all three lanes as you move.
 - Scroll sync keeps the three lanes together, line breaks can be turned off,
   and either side can be made narrow to give the other more room.
-- A minimap down the middle shows where the changes are.
+- A minimap down the middle shows where the changes are. Click it to go to a
+  change, marked and lined up in all three lanes.
+- Cmd/Ctrl+click a change in the middle to take it back, so the right side
+  reads as the left does there. Undo puts it back.
 - Line editing as in VS Code. Alt+Up/Down moves lines, Cmd/Ctrl+X with nothing
   selected cuts the whole line.
 - Keys 1-9 for everything in the bottom bar and the narrow sides (Esc to leave

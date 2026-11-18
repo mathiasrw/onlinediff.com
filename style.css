@@ -55,6 +55,22 @@ ins {
 
 /* Round 2: the exact chars that changed, painted in a stronger tone on top of
    the del/ins tint. Background only - must never affect layout. */
+/* Command held: a click on a change in the result puts B back as A has it. The
+   result shows the mode with an arrow pointer, and over a change a go-back
+   pointer, drawn like the icons in the bottom bar, with the whole change
+   outlined. */
+body.revert #result { cursor: default; }
+body.revert #result ins, body.revert #result del {
+	cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke-linecap='round' stroke-linejoin='round'%3E%3Cg stroke='white' stroke-width='5'%3E%3Cpath d='M4 12a8 8 0 1 0 8-8 8.7 8.7 0 0 0-6 2.4L4 8'/%3E%3Cpath d='M4 3v5h5'/%3E%3C/g%3E%3Cg stroke='%23333' stroke-width='1.6'%3E%3Cpath d='M4 12a8 8 0 1 0 8-8 8.7 8.7 0 0 0-6 2.4L4 8'/%3E%3Cpath d='M4 3v5h5'/%3E%3C/g%3E%3C/svg%3E") 12 12, pointer;
+}
+#revert-box {
+	position: fixed;
+	z-index: 29;
+	border: 1.5px solid cornflowerblue;
+	border-radius: 3px;
+	pointer-events: none;
+	box-sizing: border-box;
+}
 del .chg { background: #FFBDAD; }
 ins .chg { background: #ABF5D1; }
 
