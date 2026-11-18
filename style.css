@@ -17,12 +17,127 @@ body {
 }
 
 
-html, body, table, tbody, tr, td, td div {
+html, body, #stage, table, tbody, tr, td, td div {
 	height: 100%
+}
+/* The window onto the row of documents: a pair of them and the diff between */
+#stage {
+	overflow: hidden;
+	overflow: clip;
+}
+body.booting #stage {
+	visibility: hidden;
 }
 table {
 	table-layout: fixed;
 	width: 100%;
+}
+/* The letter of each document, large and faint across it. Drawn over the
+   text, where it is too faint to get in its way, so that it stays put while
+   the text scrolls. */
+td[data-letter] {
+	position: relative;
+}
+td[data-letter]::before {
+	content: attr(data-letter);
+	position: absolute;
+	inset: 4px 4px 35px 4px;
+	z-index: 1;
+	display: flex;
+	align-items: flex-end;
+	justify-content: center;
+	padding-bottom: 1vh;
+	box-sizing: border-box;
+	overflow: hidden;
+	font: bold min(34vh, 16vw)/1 Helvetica, Arial, sans-serif;
+	color: transparent;
+	pointer-events: none;
+	user-select: none;
+	-webkit-user-select: none;
+}
+#stage.lettered td[data-letter]::before {
+	animation: letter-out 5s ease-in both;
+}
+@keyframes letter-out {
+	from { color: rgba(0, 0, 0, 0.09); }
+}
+/* In a strip of a column the letter is cut to fit */
+td.narrow[data-letter]::before {
+	font-size: min(34vh, 90px);
+}
+/* Going to another pair: only the diff and what belongs to it comes and goes */
+td.result-cell, .knob, #plus, #guide {
+	transition: opacity 0.15s;
+}
+.sliding td.result-cell, .sliding .knob, .sliding #plus, .sliding #guide {
+	opacity: 0;
+	pointer-events: none;
+}
+/* A new document after the last one: a quiet plus in its top right corner */
+#plus {
+	position: fixed;
+	z-index: 5;
+	width: 20px;
+	height: 20px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 50%;
+	cursor: pointer;
+	user-select: none;
+	-webkit-user-select: none;
+}
+#plus[hidden] {
+	display: none;
+}
+#plus:hover {
+	background: rgba(0, 0, 0, 0.07);
+}
+#plus svg {
+	width: 14px;
+	height: 14px;
+	fill: none;
+	/* A shade off the document it is on: there, but quiet */
+	stroke: #d6d6d6;
+	stroke-width: 1.5;
+	stroke-linecap: round;
+	transition: stroke 0.2s;
+}
+#plus:hover svg {
+	stroke: #333;
+}
+/* On an empty document: there to be seen, not to be clicked */
+#plus.off {
+	cursor: default;
+}
+#plus.off:hover {
+	background: none;
+}
+#plus.off:hover svg {
+	stroke: #d6d6d6;
+}
+/* Something the page has to say, above the bottom bar */
+#notice {
+	position: fixed;
+	left: 50%;
+	bottom: 38px;
+	transform: translateX(-50%);
+	z-index: 20;
+	padding: 4px 10px;
+	background: #FFEBE6;
+	color: #DE350B;
+	border-radius: 4px;
+	font-size: 11px;
+}
+#notice[hidden] {
+	display: none;
+}
+/* Line breaks off: long lines run on, and the columns scroll sideways */
+body.nowrap .doc, body.nowrap #result {
+	white-space: pre;
+}
+body.nowrap td > div:not(#minimap) {
+	overflow-x: auto;
 }
 td {
 	box-sizing:border-box;
@@ -94,6 +209,8 @@ td.result-cell {
 
 #minimap {
 	position: absolute;
+	/* Over the column beside it, which it reaches into, and its letter */
+	z-index: 2;
 	right: -6px;
 	width: 8px;
 	background: transparent;
@@ -317,7 +434,7 @@ td.result-cell {
 	gap: 8px;
 }
 /* A hint: quiet, small, and quick to come */
-#tip {
+#tip, #guide {
 	position: fixed;
 	z-index: 30;
 	max-width: 360px;
@@ -328,13 +445,18 @@ td.result-cell {
 	line-height: 1.5;
 	border-radius: 4px;
 	pointer-events: none;
-	white-space: normal;
+	white-space: pre-line;
 	animation: tip-in 0.1s ease-out;
 }
-#tip[hidden] {
+#tip[hidden], #guide[hidden] {
 	display: none;
 }
-#tip kbd {
+#tip kbd.below, #guide kbd.below {
+	display: block;
+	width: max-content;
+	margin: 3px 0 2px;
+}
+#tip kbd, #guide kbd {
 	display: inline-block;
 	min-width: 1.3em;
 	margin-left: 6px;
@@ -425,12 +547,12 @@ td.narrow:focus-within::after {
 	transition: width 0.15s, height 0.15s, border-radius 0.15s, background 0.15s, transform 0.15s;
 }
 /* The pointer over the lane: the line is a touch clearer, to be noticed */
-body:has(tr > td:first-child:hover) #knob-a > span,
-body:has(tr > td:last-child:hover) #knob-b > span,
+body:has(td.col-a:hover) #knob-prev > span,
+body:has(td.col-b:hover) #knob-next > span,
 body:has(td.result-cell:hover) .knob.inner > span {
 	background: rgba(0, 0, 0, 0.2);
 }
-.knob:hover > span {
+.knob:hover > span, .knob.show > span {
 	width: 11px;
 	height: 40px;
 	border-radius: 6px;
@@ -456,8 +578,8 @@ body:has(td.result-cell:hover) .knob.inner > span {
 }
 
 /* Grown, it keeps a few pixels off the edge of the window */
-#knob-a:hover > span { transform: translateX(3px); }
-#knob-b:hover > span { transform: translateX(-3px); }
+#knob-prev:hover > span, #knob-prev.show > span { transform: translateX(3px); }
+#knob-next:hover > span, #knob-next.show > span { transform: translateX(-3px); }
 /* The thin ones on the result's edges sit a little right of where they grow */
 #knob-ia > span { transform: translateX(1px); }
 #knob-ib > span { transform: translateX(3px); }
@@ -465,6 +587,9 @@ body:has(td.result-cell:hover) .knob.inner > span {
 /* The right one by the minimap is not there at all until the pointer is */
 #knob-ib:not(:hover) > span { background: transparent; }
 #knob-ib:hover > span { transform: none; }
+/* Nothing of it over the minimap: its reach ends where the grown pill does,
+   1px short of the minimap, so a click on the minimap is the minimap's */
+#knob-ib { clip-path: inset(0 6.5px 0 0); }
 .knob svg {
 	width: 6px;
 	height: 10px;
@@ -476,14 +601,14 @@ body:has(td.result-cell:hover) .knob.inner > span {
 	opacity: 0;
 	transition: opacity 0.15s;
 }
-.knob:hover svg {
+.knob:hover svg, .knob.show svg {
 	opacity: 1;
 }
 .knob.right svg {
 	transform: scaleX(-1);
 }
 
-#a,#b{
+.doc{
 padding:10px;
 padding-bottom:2em;
 }

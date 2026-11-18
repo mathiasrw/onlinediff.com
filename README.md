@@ -5,8 +5,8 @@ what changed. No ads, no tracking, no sign-up, no watermarks.
 
 The page is three lanes. The old text is on the left, the new text on the right
 and the difference between them in the middle, updated as you type. Everything
-happens in your browser. The texts never leave it; they are kept in its local
-storage so they are still there next time.
+happens in your browser. The texts never leave it; they are kept in its own
+store (IndexedDB) so they are still there next time.
 
 ## What it does
 
@@ -21,10 +21,18 @@ storage so they are still there next time.
   change, marked and lined up in all three lanes.
 - Cmd/Ctrl+click a change in the middle to take it back, so the right side
   reads as the left does there. Undo puts it back.
+- More than two texts. A plus in the corner of the right text adds a new, empty
+  one after it, and the page slides along so that B and C are the pair on
+  screen, then C and D, and so on. Arrows on the edges of the window, or Ctrl
+  with the left and right arrow keys, go from pair to pair, also while typing. A large faint letter behind
+  each text says which one it is. An empty text at the end is dropped when you
+  go back from it. Undo works across all of them, and goes to the text it
+  changed.
 - Line editing as in VS Code. Alt+Up/Down moves lines, Cmd/Ctrl+X with nothing
   selected cuts the whole line.
 - Keys 1-9 for everything in the bottom bar and the narrow sides (Esc to leave
-  a text box first).
+  a text box first). Ctrl with left and right arrow for the pair before and
+  after works anywhere.
 
 It is a static site made of `index.html`, `style.css` and two web workers. No build
 step, no dependencies beyond the bundled jsdiff in `diff.js`.

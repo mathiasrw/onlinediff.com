@@ -43,30 +43,35 @@
 
 <a href="#" id="about" class="source" aria-label="About Online Diff">i</a>
 <div id="tip" role="tooltip" hidden></div>
+<div id="guide" role="tooltip" hidden></div>
 <div id="revert-box" hidden></div>
 <dialog id="dump"><textarea readonly spellcheck="false"></textarea><div><button id="dump-copy">Copy</button><button id="dump-close">Close</button></div></dialog>
-<a id="version" href="https://github.com/mathiasrw/onlinediff.com" target="_blank" rel="noopener">v1.6.0</a>
-<span id="knob-a" class="knob" data-tip="Hide left side a bit to give more room. [Press 8]"><span><svg viewBox="0 0 6 10" aria-hidden="true"><path d="M4.5 1.5L1.5 5L4.5 8.5"/></svg></span></span>
+<div id="notice" hidden></div>
+<a id="version" href="https://github.com/mathiasrw/onlinediff.com" target="_blank" rel="noopener">v1.7.0</a>
+<span id="knob-prev" class="knob" style="display: none"><span><svg viewBox="0 0 6 10" aria-hidden="true"><path d="M4.5 1.5L1.5 5L4.5 8.5"/></svg></span></span>
 <span id="knob-back" class="knob back" style="display: none"><span><svg viewBox="0 0 6 10" aria-hidden="true"><path d="M4.5 1.5L1.5 5L4.5 8.5"/></svg></span></span>
 <span id="knob-ia" class="knob inner" data-tip="Hide left side a bit to give more room. [Press 8]"><span><svg viewBox="0 0 6 10" aria-hidden="true"><path d="M4.5 1.5L1.5 5L4.5 8.5"/></svg></span></span>
 <span id="knob-ib" class="knob inner right" data-tip="Hide right side a bit to give more room. [Press 9]"><span><svg viewBox="0 0 6 10" aria-hidden="true"><path d="M4.5 1.5L1.5 5L4.5 8.5"/></svg></span></span>
-<span id="knob-b" class="knob right" data-tip="Hide right side a bit to give more room. [Press 9]"><span><svg viewBox="0 0 6 10" aria-hidden="true"><path d="M4.5 1.5L1.5 5L4.5 8.5"/></svg></span></span>
+<span id="knob-next" class="knob right" style="display: none"><span><svg viewBox="0 0 6 10" aria-hidden="true"><path d="M4.5 1.5L1.5 5L4.5 8.5"/></svg></span></span>
+<span id="plus" hidden><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3.5v9M3.5 8h9"/></svg></span>
 
+<div id="stage">
 <table>
 	<tr>
-		<td><div contenteditable="true" id="a">A simple tool to highlight the differences between two texts. 
+		<td><div contenteditable="true" class="doc" id="a">A simple tool to highlight the differences between two texts. 
 
 No ads, no tracking, no BS. 
 
 See the diff per char, word, line, or get the patch.</div></td>
 		<td class="result-cell"><div style="padding-top: 10px;"><pre id="result"></pre></div><div id="minimap"></div></td>
-		<td><div contenteditable="true" id="b">Highlight the differences between two texts. 
+		<td><div contenteditable="true" class="doc" id="b">Highlight the differences between two texts. 
 
 No ads, no tracking, no BS. 
 
 Diff per char, word, line, or get the patch.</div></td>
 	</tr>
 </table>
+</div>
 
 <script defer>
 var a = document.getElementById('a');
@@ -74,13 +79,205 @@ var b = document.getElementById('b');
 var result = document.getElementById('result');
 var minimap = document.getElementById('minimap');
 var resultScroller = result.parentNode;
+var stage = document.getElementById('stage');
+var table = document.querySelector('table');
+var row = table.rows[0];
+
+// The documents: A, B, C and on, each in a column of its own, all in one long
+// row with room for the diff between each two. The page shows a pair of them,
+// docs[pair] on the left and docs[pair + 1] on the right, with the diff of the
+// two in between, and slides along the row to show another pair. a and b are
+// always the two on screen. A column is never taken out of the page once it is
+// in, so the browser keeps the undo history of each.
+var docs = [a, b];
+var count = 2;       // how many are in the list. Any past that are empty spares
+var pair = 0;
+var LIST = 'main';   // the list on screen. Each list is a row of its own in the store
+var loaded = false;
+document.body.classList.add('booting');
+
+// A, B, ... Z, AA, AB, ... as the columns of a spreadsheet
+function letterOf(k) {
+	var out = '';
+	for (k++; k > 0; k = Math.floor((k - 1) / 26)) out = String.fromCharCode(65 + (k - 1) % 26) + out;
+	return out;
+}
+
+function addDoc(text) {
+	row.appendChild(document.createElement('td')).className = 'gap';
+	var pane = document.createElement('div');
+	pane.setAttribute('contenteditable', 'true');
+	pane.className = 'doc';
+	pane.tabIndex = -1;
+	if (text) pane.textContent = text;
+	row.appendChild(document.createElement('td')).appendChild(pane);
+	docs.push(pane);
+	bindDoc(pane);
+	return pane;
+}
+
+function nameCells() {
+	for (var k = 0; k < docs.length; k++) docs[k].parentNode.dataset.letter = letterOf(k);
+}
+
+// The diff has one cell, which stands between the two documents of the pair
+function placeResult(p) {
+	var target = row.cells[2 * p + 1];
+	if (target === resultCell) return;
+	var mark = document.createComment('');
+	row.replaceChild(mark, resultCell);
+	row.replaceChild(resultCell, target);
+	row.replaceChild(target, mark);
+}
+
+// Make docs[pair] and docs[pair + 1] the two that everything works on
+function usePair() {
+	a.removeAttribute('id');
+	b.removeAttribute('id');
+	a.tabIndex = b.tabIndex = -1;
+	a.parentNode.classList.remove('col-a');
+	b.parentNode.classList.remove('col-b');
+	a = docs[pair];
+	b = docs[pair + 1];
+	a.id = 'a';
+	b.id = 'b';
+	a.removeAttribute('tabindex');
+	b.removeAttribute('tabindex');
+	a.parentNode.classList.add('col-a');
+	b.parentNode.classList.add('col-b');
+	lanes.a = a;
+	lanes.b = b;
+	panes = [a, b];
+	scrollPanels = [a, resultScroller, b];
+	cells = [a.parentNode, resultCell, b.parentNode];
+	scrollPut = [];
+	scrollAnchor = null;
+	marked = {a: [], r: [], b: []};
+	if (markHL) markHL.clear();
+}
+
+// An empty document at the end of the list, past the pair on screen, is not
+// kept. Its column stays where it is, as a spare for the next one added.
+// One that was just added and never typed in is still to come back to.
+var fresh = null;
+
+function trimDocs() {
+	while (count > pair + 2 && laneText(docs[count - 1]) === '' && docs[count - 1] !== fresh) count--;
+}
+
+// The letters show for a moment and fade away, each time the pair is new
+function showLetters() {
+	stage.classList.remove('lettered');
+	stage.offsetWidth;
+	stage.classList.add('lettered');
+}
+
+// The store: IndexedDB, as a browser gives it far more room than the 5 MB of
+// localStorage. One entry per document, under the name of its list and its
+// place in it, with when it was last changed. One entry per list, with the
+// pair that was on screen. There is only the one list for now, a second one
+// is just another name. Settings stay in localStorage.
+var db = null;
+var dirty = {};      // the documents changed since the last save, by place
+var updatedAt = [];  // when each was last changed
+var saveTimer = null;
+
+function openDb(done) {
+	var over = false;
+	function end() { if (!over) { over = true; done(); } }
+	try {
+		var req = indexedDB.open('onlinediff', 1);
+		req.onupgradeneeded = function() {
+			req.result.createObjectStore('documents', {keyPath: ['list', 'pos']});
+			req.result.createObjectStore('lists', {keyPath: 'name'});
+		};
+		req.onsuccess = function() { db = req.result; end(); };
+		req.onerror = req.onblocked = end;
+	} catch (e) { end(); }
+}
+
+// done(texts, pair): what is saved for the list, texts empty if nothing is
+function readList(done) {
+	try {
+		var tx = db.transaction(['documents', 'lists']);
+		var docsReq = tx.objectStore('documents').getAll(IDBKeyRange.bound([LIST, 0], [LIST, Infinity]));
+		var listReq = tx.objectStore('lists').get(LIST);
+		tx.oncomplete = function() {
+			var texts = [], found = docsReq.result || [];
+			for (var k = 0; k < found.length && found[k].pos === k; k++) {
+				texts.push(found[k].text);
+				updatedAt[k] = found[k].updated;
+			}
+			done(texts, listReq.result ? listReq.result.pair : 0);
+		};
+		tx.onerror = tx.onabort = function() { done([], 0); };
+	} catch (e) { done([], 0); }
+}
+
+function markDirty(k) {
+	dirty[k] = true;
+	updatedAt[k] = Date.now();
+	clearTimeout(saveTimer);
+	saveTimer = setTimeout(saveDocs, 400);
+}
+
+function saveDocs() {
+	clearTimeout(saveTimer);
+	if (!loaded) return;
+	if (!db) { saveToStorage(); dirty = {}; return; }
+	try {
+		var tx = db.transaction(['documents', 'lists'], 'readwrite');
+		var store = tx.objectStore('documents');
+		for (var k in dirty) {
+			if (+k < count) store.put({list: LIST, pos: +k, text: laneText(docs[k]), updated: updatedAt[k] || Date.now()});
+		}
+		store.delete(IDBKeyRange.bound([LIST, count], [LIST, Infinity]));
+		tx.objectStore('lists').put({name: LIST, pair: pair, updated: Date.now()});
+		tx.oncomplete = function() { notice(''); };
+		tx.onabort = function() { notice('This browser is out of room, the latest changes are not saved'); };
+		dirty = {};
+	} catch (e) {}
+}
+
+var noticeBox = document.getElementById('notice');
+function notice(text) {
+	noticeBox.textContent = text;
+	noticeBox.hidden = !text;
+}
+
+// The texts as they were saved, and with them the page as it was left. The
+// first time round they come from where they were kept before, localStorage.
+function loadDocs(data, done) {
+	function use(texts, p) {
+		for (var k = 0; k < texts.length; k++) {
+			if (k >= 2) addDoc(texts[k]);
+			else if (typeof texts[k] === 'string') docs[k].textContent = texts[k];
+		}
+		count = docs.length;
+		pair = Math.max(0, Math.min(count - 2, p | 0));
+		trimDocs();
+		placeResult(pair);
+		usePair();
+		nameCells();
+		loaded = true;
+		done();
+	}
+	var old = data && data.docs ? data.docs : data ? [data.a, data.b] : [];
+	openDb(function() {
+		if (!db) { use(old, data ? data.pair : 0); return; }
+		readList(function(texts, p) {
+			if (texts.length >= 2) { use(texts, p); return; }
+			use(old, data ? data.pair : 0);
+			for (var k = 0; k < count; k++) dirty[k] = true;
+			saveDocs();
+		});
+	});
+}
 
 function loadFromStorage() {
 	try {
 		var data = JSON.parse(localStorage.getItem('diffData'));
-		if (!data) return;
-		if (typeof data.a === 'string') a.textContent = data.a;
-		if (typeof data.b === 'string') b.textContent = data.b;
+		if (!data) return null;
 		if (typeof data.diffType === 'string') {
 			var r = document.querySelector('#settings [name="diff_type"][value="' + data.diffType + '"]');
 			if (r) r.checked = true;
@@ -90,22 +287,27 @@ function loadFromStorage() {
 		// On unless turned off. Under a name of its own, as "compare" was saved as
 		// off for everyone while off was the default
 		if (data.compareMode === false) document.getElementById('compare-mode').click();
-		if (data.narrow === 'a' || data.narrow === 'b') setNarrow(data.narrow);
+		return data;
 	} catch(e) {}
+	return null;
 }
 
 function saveToStorage() {
+	if (!loaded) return;
 	try {
 		var checked = document.querySelector('#settings [name="diff_type"]:checked');
 		var data = {
-			a: a.textContent,
-			b: b.textContent,
 			diffType: checked ? checked.value : 'diffWords',
 			scrollLock: scrollLockEnabled,
 			lineBreak: lineBreakEnabled,
 			compareMode: compareEnabled,
 			narrow: narrowLane
 		};
+		// Only with no store to keep them in
+		if (!db) {
+			data.docs = docs.slice(0, count).map(laneText);
+			data.pair = pair;
+		}
 		localStorage.setItem('diffData', JSON.stringify(data));
 	} catch(e) {}
 }
@@ -1065,6 +1267,12 @@ function onDiffMessage(e) {
 	result.className = '';
 	renderDiff(e.data.diff);
 	setBusy(false);
+	if (sliding) {
+		// The diff of the new pair is in: level with the document that stayed
+		if (slideStay) syncScroll(slideStay);
+		slideDiffed = true;
+		if (slideMoved) finishSlide();
+	}
 	log(diffGen, 'page: handed to the browser ' + ms(diffPosted) + ' after it was sent to the worker');
 	if (diffGen === logGen) {
 		// The browser still has to paint it, which no script can time from the
@@ -1079,17 +1287,39 @@ function onDiffMessage(e) {
 }
 
 window.onload = function() {
-	loadFromStorage();
+	// The settings first, then the texts, which take a moment to come
+	var data = loadFromStorage();
 	onDiffTypeChange(document.querySelector('#settings [name="diff_type"]:checked'));
-	changed();
+	loadDocs(data, function() {
+		if (data && (data.narrow === 'a' || data.narrow === 'b')) setNarrow(data.narrow);
+		layoutNarrow();
+		updateNav();
+		document.body.classList.remove('booting');
+		showLetters();
+		changed();
+	});
 };
 
-a.onchange = b.onchange = changed;
+function onDocInput(e) {
+	var k = docs.indexOf(e.currentTarget);
+	if (e.currentTarget === fresh) fresh = null;
+	// Text in a spare, as after an undo of what emptied it: it is back in the list
+	for (var j = count; j <= k; j++) dirty[j] = true;
+	if (k >= count) count = k + 1;
+	markDirty(k);
+	if (k !== pair && k !== pair + 1) {
+		// An undo goes to where the last change was, which may be a document
+		// that is not on screen. Go there, so it is seen.
+		goTo(Math.min(k, count - 2));
+		return;
+	}
+	changed();
+	updateNav();
+}
 
-if ('oninput' in a) {
-	a.oninput = b.oninput = changed;
-} else {
-	a.onkeyup = b.onkeyup = changed;
+function onDocFocus(e) {
+	var k = docs.indexOf(e.currentTarget);
+	if (k !== pair && k !== pair + 1 && k < count) goTo(Math.min(k, count - 2));
 }
 
 // Put only plain text on the clipboard, so pasting into Word etc.
@@ -1336,18 +1566,31 @@ function cleanDrop(e) {
 }
 
 var panes = [a, b];
-for (var p = 0; p < panes.length; p++) {
-	panes[p].addEventListener('copy', plainTextClipboard);
-	panes[p].addEventListener('cut', plainTextClipboard);
-	panes[p].addEventListener('dragstart', plainTextDrag);
-	panes[p].addEventListener('paste', cleanPaste);
-	panes[p].addEventListener('drop', cleanDrop);
-	panes[p].addEventListener('keydown', onPaneKeyDown);
+
+function bindDoc(pane) {
+	pane.addEventListener('copy', plainTextClipboard);
+	pane.addEventListener('cut', plainTextClipboard);
+	pane.addEventListener('dragstart', plainTextDrag);
+	pane.addEventListener('paste', cleanPaste);
+	pane.addEventListener('drop', cleanDrop);
+	pane.addEventListener('keydown', onPaneKeyDown);
+	pane.addEventListener('input', onDocInput);
+	pane.addEventListener('focus', onDocFocus);
+	pane.addEventListener('scroll', function() {
+		var j = scrollPanels.indexOf(pane);
+		if (j >= 0) onPanelScroll(j);
+	}, {passive: true});
 }
+bindDoc(a);
+bindDoc(b);
 
 window.onbeforeunload = function() {
 	saveToStorage();
+	saveDocs();
 };
+document.addEventListener('visibilitychange', function() {
+	if (document.visibilityState === 'hidden') saveDocs();
+});
 
 function onDiffTypeChange(radio) {
 	window.diffType = radio.value;
@@ -1397,9 +1640,20 @@ document.addEventListener('keydown', function(e) {
 	if (e.key === '5') { scrollLockBtn.click(); }
 	if (e.key === '6') { lineBreakToggle.click(); }
 	if (e.key === '7') { compareToggle.click(); }
-	if (e.key === '8') { knobs.a.click(); }
-	if (e.key === '9') { knobs.b.click(); }
+	if (e.key === '8') { setNarrow(narrowLane ? null : 'a'); }
+	if (e.key === '9') { setNarrow(narrowLane ? null : 'b'); }
 });
+
+// Control with left or right goes to the pair before or after, also while
+// typing, so it is taken before the text gets it. That is where it would move
+// the caret a word along on Windows and Linux.
+document.addEventListener('keydown', function(e) {
+	if (!e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+	if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+	e.preventDefault();
+	e.stopPropagation();
+	if (e.key === 'ArrowLeft') stepPrev(); else stepNext();
+}, true);
 
 // About
 var about = document.getElementById('about');
@@ -1463,7 +1717,8 @@ function stateDump() {
 			narrow: narrowLane,
 			narrowShift: narrowShift
 		},
-		texts: {a: a.textContent, b: b.textContent},
+		list: {name: LIST, pair: pair, count: count, columns: docs.length, shown: letterOf(pair) + ' vs. ' + letterOf(pair + 1), store: db ? 'IndexedDB' : 'localStorage', updated: updatedAt},
+		texts: docs.map(function(d) { return d.textContent; }),
 		lanes: {a: panelState(0), r: panelState(1), b: panelState(2)},
 		minimap: {marks: minimap.childNodes.length, height: minimap.clientHeight},
 		diff: {
@@ -1509,14 +1764,24 @@ var tipFor = null, tipTimer = null, tipShownAt = 0;
 var knobsKnown = {};
 try { knobsKnown = JSON.parse(localStorage.getItem('knobsKnown')) || {}; } catch (e) {}
 
-// rect: where to show it, when not above el itself
-function showTip(el, rect) {
+// The two arrows to the next pair always have their hint: it says where they
+// lead, which is not the same from one time to the next
+function hintKnown(el) {
+	return knobsKnown[el.id] && el !== knobPrev && el !== knobNext;
+}
+
+// rect: where to show it, when not above el itself. box: the hint to show it
+// in, when not the one that follows the pointer
+function showTip(el, rect, box) {
+	var tip = box || window.tip;
 	var text = el.dataset.tip, key = /\s*\[Press (.+)\]$/.exec(text);
 	tip.textContent = key ? text.slice(0, key.index) : text;
 	if (key) {
 		var kbd = document.createElement('kbd');
 		kbd.textContent = key[1];
 		if (!key.index) kbd.style.marginLeft = '0';
+		// On a line of its own when the hint puts it there
+		if (/^\s*\n/.test(text.slice(key.index))) kbd.className = 'below';
 		tip.appendChild(kbd);
 	}
 	tip.hidden = false;
@@ -1525,6 +1790,7 @@ function showTip(el, rect) {
 	var r = rect || el.getBoundingClientRect(), w = tip.offsetWidth, h = tip.offsetHeight;
 	var x = Math.max(8, Math.min(document.documentElement.clientWidth - w - 8, r.left + r.width / 2 - w / 2));
 	var y = r.top - h - 6;
+	if (y < 4) y = r.bottom + 6;
 	if (el.classList.contains('knob')) {
 		// Beside a knob, as above it is text that is being worked on
 		var line = el.firstChild.getBoundingClientRect();
@@ -1533,6 +1799,7 @@ function showTip(el, rect) {
 	}
 	tip.style.left = x + 'px';
 	tip.style.top = Math.max(4, y) + 'px';
+	if (box) return;
 	tipFor = el;
 	tipShownAt = Date.now();
 }
@@ -1550,7 +1817,7 @@ document.addEventListener('mouseover', function(e) {
 	var el = e.target.closest && e.target.closest('[data-tip]');
 	if (el === tipFor) return;
 	hideTip();
-	if (!el || knobsKnown[el.id]) return;
+	if (!el || hintKnown(el) || el === guideFor) return;
 	// Straight away if one was just showing, else after a short moment
 	tipTimer = setTimeout(function() { showTip(el); }, Date.now() - tipShownAt < 300 ? 0 : 250);
 });
@@ -1560,11 +1827,11 @@ document.addEventListener('click', function(e) {
 	var el = e.target.closest && e.target.closest('[data-tip]');
 	if (!el) return;
 	// Clicked with the pointer, not by its key
-	if (el.classList.contains('knob') && e.detail) {
+	if (el.classList.contains('knob') && e.detail && el !== knobPrev && el !== knobNext) {
 		knobsKnown[el.id] = true;
 		try { localStorage.setItem('knobsKnown', JSON.stringify(knobsKnown)); } catch (err) {}
 	}
-	if (!knobsKnown[el.id] && el.matches(':hover') && el.getClientRects().length) showTip(el);
+	if (!hintKnown(el) && el !== guideFor && el.matches(':hover') && el.getClientRects().length) showTip(el);
 });
 // Not the revert hint: the key that brings it is a key too
 document.addEventListener('keydown', function() { if (tipFor && revertHover.indexOf(tipFor) < 0) hideTip(); });
@@ -1573,7 +1840,7 @@ document.documentElement.addEventListener('mouseleave', hideTip);
 // Scroll sync
 var scrollLockEnabled = true;
 var scrollLockBtn = document.getElementById('scroll-lock');
-var scrollPanels = document.querySelectorAll('td > div:not(#minimap)');
+var scrollPanels = [a, resultScroller, b];  // the three on screen, left to right
 // Where each panel was last put by us, as [top, left]. Moving a panel makes it
 // fire a scroll event like any other, and without this there is no telling it
 // from the user scrolling: the lane that was moved would turn round and move
@@ -1609,14 +1876,8 @@ lineBreakToggle.onclick = function() {
 	lineBreakEnabled = !lineBreakEnabled;
 	lineBreakToggle.classList.toggle('disabled', !lineBreakEnabled);
 	
-	// Toggle white-space property for all text areas
-	var textAreas = document.querySelectorAll('#a, #b, #result');
-	for (var i = 0; i < textAreas.length; i++) {
-		textAreas[i].style.whiteSpace = lineBreakEnabled ? 'pre-wrap' : 'pre';
-	}
-	for (var j = 0; j < scrollPanels.length; j++) {
-		scrollPanels[j].style.overflowX = lineBreakEnabled ? 'hidden' : 'auto';
-	}
+	// By a class, so that the documents off screen have it as well
+	document.body.classList.toggle('nowrap', !lineBreakEnabled);
 	scrollAnchor = null;
 	renderMinimap();
 	saveToStorage();
@@ -1641,34 +1902,31 @@ compareToggle.onclick = function() {
 // The result keeps its width too, the other lane gets all that was freed.
 var narrowLane = null;  // 'a' or 'b' while that lane is narrow
 var narrowShift = 0;    // how far its text is slid left
-var knobs = {a: document.getElementById('knob-a'), b: document.getElementById('knob-b')};
 // While a lane is narrow, a knob on the result's side towards the wide lane,
 // shown as if the pointer were on it: the way back to thirds, in plain sight
 var knobBack = document.getElementById('knob-back');
-var table = document.querySelector('table');
-var cells = table.rows[0].cells;  // A, result, B
+var cells = [a.parentNode, resultCell, b.parentNode];  // of the three on screen
 
-// One step a click: from thirds to narrow, and from either narrow back to thirds
-knobs.a.onclick = function() { setNarrow(narrowLane ? null : 'a'); };
-knobs.b.onclick = function() { setNarrow(narrowLane ? null : 'b'); };
-// Not a place to start a selection, and the caret stays where it is
 knobBack.onclick = function() { setNarrow(null); };
-// The same two on the edges of the result, there while the lanes are thirds
+// On the edges of the result, there while the lanes are thirds
 var knobsIn = {a: document.getElementById('knob-ia'), b: document.getElementById('knob-ib')};
 knobsIn.a.onclick = function() { setNarrow('a'); };
 knobsIn.b.onclick = function() { setNarrow('b'); };
-knobs.a.onmousedown = knobs.b.onmousedown = knobBack.onmousedown = knobsIn.a.onmousedown = knobsIn.b.onmousedown = function(e) { e.preventDefault(); };
+// On the edges of the window: to the pair before and the pair after. And a
+// plus in the corner of the last document, for a new one after it.
+var knobPrev = document.getElementById('knob-prev');
+var knobNext = document.getElementById('knob-next');
+var plus = document.getElementById('plus');
+knobPrev.onclick = stepPrev;
+knobNext.onclick = function() { if (pair < count - 2) stepNext(); };
+plus.onclick = addNext;
+// Not a place to start a selection, and the caret stays where it is
+knobBack.onmousedown = knobsIn.a.onmousedown = knobsIn.b.onmousedown = knobPrev.onmousedown = knobNext.onmousedown = plus.onmousedown = function(e) { e.preventDefault(); };
 
 function setNarrow(lane) {
 	narrowLane = lane;
 	narrowShift = 0;
-	// The chevrons point the way the result will go on a click: out from the
-	// middle while in thirds, back to it while a lane is narrow
-	knobs.a.classList.toggle('right', lane === 'a');
-	knobs.b.classList.toggle('right', lane !== 'b');
 	var back = lane === 'a' ? 'Show the left side again.' : 'Show the right side again.';
-	knobs.a.dataset.tip = (lane ? back : 'Hide left side a bit to give more room.') + ' [Press 8]';
-	knobs.b.dataset.tip = (lane ? back : 'Hide right side a bit to give more room.') + ' [Press 9]';
 	knobBack.dataset.tip = back + (lane === 'a' ? ' [Press 8]' : ' [Press 9]');
 	knobBack.classList.toggle('right', lane === 'a');
 	layoutNarrow();
@@ -1677,35 +1935,48 @@ function setNarrow(lane) {
 	saveToStorage();
 }
 
+// Every column is a third of the window wide, and the row is moved left so
+// that the pair is the part of it in the window. In whole pixels, so the text
+// is as sharp wherever the row stands.
 function layoutNarrow() {
-	// A third of what the cells get, the spacing between them taken off
-	var spacing = table.clientWidth - cells[0].offsetWidth - cells[1].offsetWidth - cells[2].offsetWidth;
-	var third = (table.clientWidth - spacing) / 3;
+	var all = row.cells, n = all.length;
+	var spacing = parseFloat(getComputedStyle(table).borderSpacing) || 0;
+	var full = stage.clientWidth;
+	var third = Math.floor((full - 4 * spacing) / 3);
+	var slack = full - 3 * third - 4 * spacing;
+	var strip = Math.min(third, Math.max(full * 0.08, 150) + 8);
+	for (var i = 0; i < n; i++) all[i].style.width = third + 'px';
 	for (var j = 0; j < 3; j += 2) {
 		var cell = cells[j], pane = cell.firstElementChild;
 		if (pane.id === narrowLane) {
-			cell.className = 'narrow';
-			cell.style.width = Math.min(third, Math.max(table.clientWidth * 0.08, 150) + 8) + 'px';
+			cell.classList.add('narrow');
+			cell.style.width = strip + 'px';
 			// The width it has as one of three, less the cell's padding and its own
 			var css = getComputedStyle(pane);
 			pane.style.width = (third - 8 - parseFloat(css.paddingLeft) - parseFloat(css.paddingRight)) + 'px';
 		} else {
-			cell.className = '';
-			cell.style.width = narrowLane ? 'auto' : '';
+			cell.classList.remove('narrow');
+			// The other lane gets all that was freed
+			if (narrowLane) cell.style.width = (2 * third - strip) + 'px';
 			pane.style.width = pane.style.transform = pane.style.clipPath = '';
 		}
 	}
-	cells[1].style.width = narrowLane ? third + 'px' : '';
+	table.style.width = (n * third + (n + 1) * spacing) + 'px';
+	table.style.marginLeft = (Math.floor(slack / 2) - 2 * pair * (third + spacing)) + 'px';
 	if (narrowLane) {
 		putNarrow(narrowShift);
 		// The strip's edge goes down as far as the lane does
 		var cell = cells[narrowLane === 'a' ? 0 : 2];
 		cell.style.setProperty('--lane-bottom', cell.getBoundingClientRect().bottom - lanes[narrowLane].getBoundingClientRect().bottom + 'px');
 	}
-	// Each knob on the outer side of its lane, halfway between it and the edge
-	// of the window (the cell's padding of 4px is where the lane starts)
-	knobs.a.style.left = (cells[0].getBoundingClientRect().left + 4) / 2 + 'px';
-	knobs.b.style.left = (cells[2].getBoundingClientRect().right - 4 + document.documentElement.clientWidth) / 2 + 'px';
+	// Each of the outer knobs halfway between its document and the edge of the
+	// window (the cell's padding of 4px is where the document starts)
+	var right = cells[2].getBoundingClientRect();
+	knobPrev.style.left = (cells[0].getBoundingClientRect().left + 4) / 2 + 'px';
+	knobNext.style.left = (right.right - 4 + document.documentElement.clientWidth) / 2 + 'px';
+	// The plus in the top right corner of the right document, clear of its scroll bar
+	plus.style.left = (right.right - 4 - (b.offsetWidth - b.clientWidth) - 24) + 'px';
+	plus.style.top = (right.top + 4 + 5) + 'px';
 	// The back knob on the edge of the wide lane that faces the result, right
 	// on its line (the cell's padding of 4px is where the lane starts)
 	knobBack.style.display = narrowLane ? '' : 'none';
@@ -1720,6 +1991,179 @@ function layoutNarrow() {
 	knobsIn.b.style.left = minimap.getBoundingClientRect().left - 6.5 + 'px';
 }
 layoutNarrow();
+
+// What there is to go to: the arrows only when there is a pair that way, the
+// plus only on the last document and once there is something in it.
+function updateNav() {
+	knobPrev.style.display = pair > 0 ? '' : 'none';
+	knobNext.style.display = pair < count - 2 ? '' : 'none';
+	if (pair > 0) knobPrev.dataset.tip = 'Show ' + letterOf(pair - 1) + ' vs. ' + letterOf(pair) + '\n[Press Ctrl + Left]';
+	knobNext.dataset.tip = 'Show ' + letterOf(pair + 1) + ' vs. ' + letterOf(pair + 2) + '\n[Press Ctrl + Right]';
+	// Always on the last document, so that it is plain there can be more. Not
+	// to be used on an empty one, which says so.
+	var empty = laneText(b) === '';
+	plus.hidden = pair !== count - 2;
+	plus.classList.toggle('off', empty);
+	plus.dataset.tip = empty ? 'Write in ' + letterOf(count - 1) + ' first\nto add ' + letterOf(count) + ' after it' : 'Add ' + letterOf(count) + ' after ' + letterOf(count - 1) + '\n[Press Ctrl + Right]';
+	updateGuide();
+}
+
+// The first time there is a pair to go back to, the arrow to it stands out
+// with its hint beside it, as if the pointer were on it, until it has been
+// used. Then the same for the arrow that goes on again. Once each: after
+// that it is known how to get about, and both are as quiet as the rest.
+var guide = document.getElementById('guide');
+var guideFor = null;
+
+function updateGuide() {
+	var el = null;
+	if (!knobsKnown['knob-prev']) { if (pair > 0) el = knobPrev; }
+	else if (!knobsKnown['knob-next'] && pair < count - 2) el = knobNext;
+	if (guideFor && guideFor !== el && guideFor !== backKnob) guideFor.classList.remove('show');
+	guideFor = el;
+	guide.hidden = !el;
+	if (!el) return;
+	el.classList.add('show');
+	if (tipFor === el) hideTip();
+	showTip(el, null, guide);
+}
+
+function know(el) {
+	if (knobsKnown[el.id]) return;
+	knobsKnown[el.id] = true;
+	try { localStorage.setItem('knobsKnown', JSON.stringify(knobsKnown)); } catch (err) {}
+}
+
+function stepPrev() {
+	if (sliding || pair < 1) return;
+	know(knobPrev);
+	goTo(pair - 1);
+}
+
+// A new, empty document after the last one, and on to it
+function addNext() {
+	if (sliding || pair !== count - 2 || laneText(b) === '') return;
+	if (docs.length === count) {
+		addDoc('');
+		nameCells();
+	}
+	count++;
+	fresh = docs[count - 1];
+	markDirty(count - 1);
+	goTo(pair + 1, true);
+}
+
+function stepNext() {
+	if (sliding) return;
+	if (pair < count - 2) {
+		// Known only once the way back is, the two are shown one at a time
+		if (knobsKnown['knob-prev']) know(knobNext);
+		goTo(pair + 1);
+	} else {
+		addNext();
+	}
+}
+
+// To another pair. The diff fades out, the row slides along until the pair is
+// in the window, and the diff of the two fades back in. Only the diff comes
+// and goes: the documents are all there in the row, side by side, the whole
+// time. A narrow lane goes back to a third first, so the diff is as wide
+// after as before and has the same place in the window.
+var sliding = false, slideMoved = false, slideDiffed = false, slideStay = null;
+
+function goTo(q, typeInIt) {
+	if (sliding || !loaded || q === pair || q < 0 || q > count - 2) return;
+	sliding = true;
+	slideMoved = slideDiffed = false;
+	if (narrowLane) setNarrow(null);
+	hideTip();
+	leaveChange();
+	document.body.classList.add('sliding');
+	setTimeout(function() { slide(q, typeInIt); }, 150);
+}
+
+var backKnob = null, backTimer = null;
+
+function slide(q, typeInIt) {
+	var from = pair;
+	// The document that is on screen before and after. What is marked in it
+	// is marked after as well: the selection if it is in there, as that stays
+	// where it is by itself, or else the first of its marks.
+	var stay = q === pair + 1 ? b : q === pair - 1 ? a : null;
+	var sel = window.getSelection(), carry = null;
+	if (stay && !typeInIt && !(sel.rangeCount && stay.contains(sel.anchorNode))) {
+		var lane = stay === a ? 'a' : 'b', first = marked[lane][0];
+		try {
+			if (first) carry = [laneOffset(lane, first.startContainer, first.startOffset), laneOffset(lane, first.endContainer, first.endOffset)];
+		} catch (e) {}
+	}
+	slideStay = stay;
+	var before = table.getBoundingClientRect().left;
+	result.textContent = '';
+	diffNodes = [];
+	minimap.textContent = '';
+	placeResult(q);
+	pair = q;
+	usePair();
+	trimDocs();
+	layoutNarrow();
+	updateNav();
+	showLetters();
+	// The way back to where this came from stands out for a while, as if the
+	// pointer were on it, so that going to and fro is easy to find
+	var back = q < from ? knobNext : knobPrev;
+	clearTimeout(backTimer);
+	if (backKnob && backKnob !== guideFor) backKnob.classList.remove('show');
+	backKnob = back;
+	back.classList.add('show');
+	backTimer = setTimeout(function() {
+		if (backKnob !== guideFor) backKnob.classList.remove('show');
+		backKnob = null;
+	}, 5000 + 400);
+	var shift = before - table.getBoundingClientRect().left;
+	// A document that is no longer on screen is not one to type in
+	var el = document.activeElement;
+	if (el && el !== a && el !== b && docs.indexOf(el) >= 0) el.blur();
+	if (typeInIt) {
+		// The caret as well: Firefox leaves it where it was, in the one before
+		b.focus();
+		selectText(b, 0);
+	} else if (carry) {
+		selectText(stay, carry[0], compareEnabled ? undefined : carry[1]);
+	} else if (!(sel.rangeCount && (a.contains(sel.anchorNode) || b.contains(sel.anchorNode)))) {
+		sel.removeAllRanges();
+	}
+	// Not in a document after a slide, so that the keys go on to the next
+	// pair and not into the text. What is selected stays, and with it the marks.
+	el = document.activeElement;
+	if (!typeInIt && el && docs.indexOf(el) >= 0) el.blur();
+	// Level with the one that stayed, and the diff under way while the row moves
+	if (stay) syncScroll(stay);
+	requestDiff(0);
+	saveDocs();
+	// From where it was to where it now is
+	var time = Math.min(600, 260 + 60 * Math.abs(shift) / stage.clientWidth);
+	table.style.transition = 'none';
+	table.style.transform = 'translateX(' + shift + 'px)';
+	table.offsetWidth;
+	table.style.transition = 'transform ' + time + 'ms cubic-bezier(0.3, 0.1, 0.2, 1)';
+	table.style.transform = 'translateX(0)';
+	setTimeout(function() {
+		table.style.transition = table.style.transform = '';
+		slideMoved = true;
+		// A diff that takes its time shows as any other that does
+		if (slideDiffed) finishSlide(); else setTimeout(finishSlide, 400);
+	}, time + 20);
+}
+
+function finishSlide() {
+	if (!sliding) return;
+	sliding = false;
+	slideStay = null;
+	document.body.classList.remove('sliding');
+	layoutNarrow();
+	updateNav();
+}
 
 function putNarrow(shift) {
 	var pane = lanes[narrowLane];
@@ -1829,11 +2273,7 @@ function alignMarks(from, spans) {
 	for (j = 0; j < scrollPanels.length; j++) scrollAnchor[j] = scrollPanels[j].scrollTop;
 }
 
-for (var k = 0; k < scrollPanels.length; k++) {
-	(function(j) {
-		scrollPanels[j].addEventListener('scroll', function() { onPanelScroll(j); }, {passive: true});
-	})(k);
-}
+resultScroller.addEventListener('scroll', function() { onPanelScroll(1); }, {passive: true});
 </script>
 </body>
 </html>
